@@ -18,6 +18,26 @@ from modforms.qexpansion import QExpansion
 
 st.set_page_config(page_title="mod-forms", page_icon="🌀", layout="wide")
 
+# Trim Streamlit's default top/bottom padding and cap the rendered image to
+# the viewport height so the preview fits without scrolling, regardless of
+# the underlying pixel resolution (which can be much larger, up to 8K).
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 1.1rem; padding-bottom: 1rem; }
+    div[data-testid="stImage"] img {
+        max-height: 78vh !important;
+        width: auto !important;
+        max-width: 100% !important;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 BUILTIN_FORMS = {
     "Delta — weight 12, level 1": lambda n: forms.delta(n),
     "E4 — Eisenstein, weight 4": lambda n: forms.eisenstein(4, n),
@@ -71,6 +91,20 @@ st.caption(
 form = None
 
 with st.sidebar:
+    dark_mode = st.toggle("🌙 Night mode", value=False, help="Dark UI, and a black plot background instead of white.")
+    if dark_mode:
+        st.markdown(
+            """
+            <style>
+            .stApp { background-color: #000000; color: #e6e6e6; }
+            section[data-testid="stSidebar"] { background-color: #0a0a0a; }
+            section[data-testid="stSidebar"] * { color: #e6e6e6; }
+            .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp label, .stApp span { color: #e6e6e6; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
     st.header("1. Form")
     source = st.radio("Source", ["Built-in", "LMFDB", "Upload CSV"], horizontal=True)
 
@@ -168,7 +202,13 @@ with st.sidebar:
         style_kwargs["offset"] = st.slider("Hue offset", 0.0, 1.0, 0.0, 0.05)
 
     st.header("4. Resolution")
-    res = st.slider("Grid size (rows = cols)", 100, 900, 450, 50)
+    res = st.slider("Grid size (rows = cols)", 128, 8192, 512, 64)
+    if res > 2048:
+        st.caption(
+            f"⚠️ {res}×{res} (~{res * res / 1e6:.0f}M points) will take a while — "
+            "roughly a minute around 4K, several minutes at 8K — and can use "
+            "several GB of RAM at the top end."
+        )
 
     render_clicked = st.button("▶ Render", type="primary", width="stretch")
 
@@ -184,13 +224,14 @@ if render_clicked:
                 shape=(res, res),
                 disk_extent=disk_extent,
             )
-            rgb = plotting.render(vals, style=style, **style_kwargs)
+            plot_background = (0.0, 0.0, 0.0) if dark_mode else (1.0, 1.0, 1.0)
+            rgb = plotting.render(vals, style=style, background=plot_background, **style_kwargs)
             st.session_state["last_png"] = rgb_to_png_bytes(rgb)
             label = getattr(form, "label", None) or "custom form"
             st.session_state["last_caption"] = f"{label} — {STYLE_LABELS.get(style, style)}"
 
 if "last_png" in st.session_state:
-    st.image(st.session_state["last_png"], caption=st.session_state["last_caption"], width="stretch")
+    st.image(st.session_state["last_png"], caption=st.session_state["last_caption"])
     st.download_button("Download PNG", st.session_state["last_png"], file_name="modform.png", mime="image/png")
 else:
     st.info("Configure a form in the sidebar and click **Render**.")

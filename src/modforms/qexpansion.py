@@ -35,12 +35,23 @@ class QExpansion:
         return len(self.coeffs)
 
     def __call__(self, z):
-        """Evaluate on a numpy array (or scalar) of complex points z."""
+        """Evaluate on a numpy array (or scalar) of complex points z.
+
+        Uses in-place array ops in the Horner loop (rather than
+        ``acc = acc * q + a``) to avoid allocating a fresh temporary array
+        on every one of the (typically hundreds of) iterations, which
+        matters a lot at the pixel counts a plot can involve.
+        """
         q = np.exp(2j * np.pi * np.asarray(z, dtype=complex))
         acc = np.zeros_like(q, dtype=complex)
         for a in self.coeffs[::-1]:
-            acc = acc * q + a
-        return acc * q**self.start
+            acc *= q
+            acc += a
+        if self.start == 1:
+            acc *= q
+        elif self.start != 0:
+            acc *= q**self.start
+        return acc
 
     @classmethod
     def from_list(cls, coeffs, **kwargs):
