@@ -115,8 +115,12 @@ with st.sidebar:
 
     elif source == "LMFDB":
         n_terms = st.slider("Fourier coefficients (terms)", 20, 800, 400, 20)
+        st.caption(
+            "Either search by level/weight and pick a result below, or type a "
+            "label directly (e.g. from the paper) — then click **Load form**."
+        )
 
-        with st.expander("Search by level / weight"):
+        with st.expander("Search by level / weight", expanded=True):
             level = st.number_input("Level", min_value=1, value=105, step=1)
             weight = st.number_input("Weight", min_value=1, value=2, step=1)
             if st.button("Search"):
@@ -126,20 +130,30 @@ with st.sidebar:
                     st.error(str(e))
             results = st.session_state.get("lmfdb_results")
             if results:
+                labels = [d.get("label") for d in results]
                 st.dataframe(
                     [{"label": d.get("label"), "dim": d.get("dim")} for d in results],
                     width="stretch",
                     hide_index=True,
                 )
+                st.selectbox(
+                    "Pick a result → fills in the label below",
+                    labels,
+                    key="lmfdb_pick_result",
+                    on_change=lambda: st.session_state.__setitem__(
+                        "lmfdb_label_input", st.session_state["lmfdb_pick_result"]
+                    ),
+                )
             elif results == []:
                 st.caption("No results.")
 
+        st.session_state.setdefault("lmfdb_label_input", "5.4.a.a")
         label = st.text_input(
             "LMFDB label",
-            value="5.4.a.a",
+            key="lmfdb_label_input",
             help="Galois-orbit label (e.g. 5.4.a.a) or embedded label (5.4.a.a.1.1)",
         )
-        if st.button("Load form"):
+        if st.button("Load form", type="secondary"):
             try:
                 coeffs, start, resolved_label = cached_lmfdb_qexpansion(label, n_terms)
                 st.session_state["lmfdb_form"] = (coeffs, start, resolved_label)
@@ -150,7 +164,7 @@ with st.sidebar:
         if "lmfdb_form" in st.session_state:
             coeffs, start, resolved_label = st.session_state["lmfdb_form"]
             form = QExpansion(coeffs, start=start, label=resolved_label)
-            st.caption(f"Currently loaded: **{resolved_label}**")
+            st.caption(f"✓ Currently loaded: **{resolved_label}** — click **▶ Render** below to plot it.")
 
     else:  # Upload CSV
         upload = st.file_uploader(
