@@ -30,7 +30,21 @@ pip install -e .
 (or just `pip install -r requirements.txt` and add `src/` to your
 `PYTHONPATH` — the only dependencies are `numpy` and `matplotlib`.)
 
-## Quick start
+## UI
+
+The easiest way to explore this is the Streamlit app: dropdowns for the
+form (built-in, LMFDB import, or your own CSV), the region, the
+visualization style, and whatever parameters that style takes, plus a
+live preview and a PNG download button.
+
+```bash
+pip install -e ".[ui]"     # or: pip install -r requirements-ui.txt
+streamlit run app.py
+```
+
+This opens in your browser at `http://localhost:8501`.
+
+## Quick start (CLI / scripting)
 
 ```bash
 python -m modforms.cli plot --form delta --region disk --style phase-contour --cmap cividis --out delta.png
@@ -89,7 +103,9 @@ for loading coefficients by hand with `QExpansion.from_list`/`from_csv`.
 
 `modforms.lmfdb` talks to the [LMFDB's public API](https://www.lmfdb.org/api/)
 to browse and import newforms directly, so you don't have to copy
-coefficients by hand.
+coefficients by hand. This is also available in the UI (`streamlit run
+app.py`, pick "LMFDB" as the form source) if you'd rather browse and load
+by dropdown/search box.
 
 Browse forms by level/weight:
 
@@ -146,6 +162,7 @@ computed explicitly.
 ## Layout
 
 ```
+app.py            Streamlit UI (streamlit run app.py)
 src/modforms/
   grid.py         halfplane/disk grids, disk<->halfplane Moebius map
   qexpansion.py   evaluate a truncated q-expansion on a grid
@@ -163,6 +180,10 @@ tests/
 ## Tests
 
 ```bash
-pip install pytest
+pip install -e ".[dev]"
 pytest
 ```
+
+The UI tests (`tests/test_app.py`) exercise `app.py` headlessly via
+Streamlit's `AppTest` and are skipped automatically if `streamlit` isn't
+installed (install with `pip install -e ".[ui]"` to include them).

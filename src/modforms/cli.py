@@ -8,7 +8,7 @@
 import argparse
 
 from . import forms, lmfdb
-from .coloring import STYLES
+from .coloring import STYLES, STYLE_PARAMS
 from .plotting import plot_form
 from .qexpansion import QExpansion
 
@@ -19,18 +19,6 @@ BUILTIN_FORMS = {
     "e8": lambda n: forms.eisenstein(8, n),
     "e10": lambda n: forms.eisenstein(10, n),
     "e14": lambda n: forms.eisenstein(14, n),
-}
-
-_STYLE_KWARGS = {
-    "magnitude": {"alpha": "alpha"},
-    "periodic-linear": {"offset": "offset"},
-    "periodic-log": {"base": "base", "offset": "offset"},
-    "phase": {"offset": "offset"},
-    "phase-contour": {"base": "base", "offset": "offset"},
-    "colormap-phase": {"cmap": "cmap", "offset": "offset"},
-    "colormap-phase-contour": {"cmap": "cmap", "base": "base", "offset": "offset"},
-    "colormap-magnitude": {"cmap": "cmap", "base": "base", "offset": "offset"},
-    "colormap-standard": {"cmap": "cmap", "offset": "offset"},
 }
 
 
@@ -86,7 +74,7 @@ def _load_form(args):
 
 def _run_plot(args):
     form = _load_form(args)
-    style_kwargs = {dest: getattr(args, src) for dest, src in _STYLE_KWARGS.get(args.style, {}).items()}
+    style_kwargs = {p: getattr(args, p) for p in STYLE_PARAMS.get(args.style, [])}
     plot_form(
         form,
         region=args.region,

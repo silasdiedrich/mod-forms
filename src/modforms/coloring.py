@@ -178,3 +178,30 @@ STYLES = {
     "colormap-magnitude": colormap_magnitude,
     "colormap-standard": colormap_domain_coloring,
 }
+
+# Extra keyword arguments each style accepts, beyond the values array.
+# Shared by the CLI and the UI so both stay in sync with `STYLES`.
+STYLE_PARAMS = {
+    "magnitude": ["alpha"],
+    "periodic-linear": ["offset"],
+    "periodic-log": ["base", "offset"],
+    "phase": ["offset"],
+    "phase-contour": ["base", "offset"],
+    "colormap-phase": ["cmap", "offset"],
+    "colormap-phase-contour": ["cmap", "base", "offset"],
+    "colormap-magnitude": ["cmap", "base", "offset"],
+    "colormap-standard": ["cmap", "offset"],
+}
+
+STYLE_LABELS = {
+    "standard": "Standard domain coloring (§2.2.1)",
+    "magnitude": "Magnitude only, grayscale (§2.2.2)",
+    "periodic-linear": "Periodic magnitude, linear — LMFDB style (§2.2.3)",
+    "periodic-log": "Periodic magnitude, logarithmic (§2.2.4)",
+    "phase": "Pure phase plot (§2.2.5)",
+    "phase-contour": "Phase with magnitude contours (§2.2.6)",
+    "colormap-phase": "Colormap phase plot (§3)",
+    "colormap-phase-contour": "Colormap phase + contours (§3)",
+    "colormap-magnitude": "Colormap magnitude (§3)",
+    "colormap-standard": "Colormap standard domain coloring (§3)",
+}

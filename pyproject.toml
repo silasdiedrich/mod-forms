@@ -13,5 +13,9 @@ dependencies = [
     "matplotlib>=3.5",
 ]
 
+[project.optional-dependencies]
+ui = ["streamlit>=1.32", "pillow>=9"]
+dev = ["pytest"]
+
 [tool.setuptools.packages.find]
 where = ["src"]

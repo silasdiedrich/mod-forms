@@ -47,17 +47,28 @@ class QExpansion:
         return cls(coeffs, **kwargs)
 
     @classmethod
-    def from_csv(cls, path, column=0, **kwargs):
+    def from_csv(cls, source, column=0, **kwargs):
         """Load coefficients from a single column of a CSV file, e.g. a
         q-expansion downloaded from the LMFDB (https://www.lmfdb.org).
+
+        ``source`` may be a path, or a file-like object with a ``read()``
+        method (e.g. a Streamlit ``UploadedFile``).
         """
+        if hasattr(source, "read"):
+            text = source.read()
+            if isinstance(text, bytes):
+                text = text.decode("utf-8")
+            lines = text.splitlines()
+        else:
+            with open(source, newline="") as f:
+                lines = f.read().splitlines()
+
         coeffs = []
-        with open(path, newline="") as f:
-            for row in csv.reader(f):
-                if not row:
-                    continue
-                try:
-                    coeffs.append(complex(row[column].strip()))
-                except ValueError:
-                    continue  # skip header lines
+        for row in csv.reader(lines):
+            if not row:
+                continue
+            try:
+                coeffs.append(complex(row[column].strip()))
+            except ValueError:
+                continue  # skip header lines
         return cls(coeffs, **kwargs)
