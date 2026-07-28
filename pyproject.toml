@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "modforms"
+version = "0.1.0"
+description = "Visualize modular forms using the techniques of arXiv:2002.05234 (Lowry-Duda, 'Visualizing Modular Forms')"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.20",
+    "matplotlib>=3.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
