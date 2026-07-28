@@ -13,6 +13,7 @@ contours, and matplotlib-colormap based variants of all of the above.
 from .qexpansion import QExpansion
 from .grid import halfplane_grid, disk_grid, phi
 from .plotting import evaluate_on_region, render, save_png, plot_form
+from . import lmfdb
 
 __all__ = [
     "QExpansion",
@@ -23,6 +24,7 @@ __all__ = [
     "render",
     "save_png",
     "plot_form",
+    "lmfdb",
 ]
 
 __version__ = "0.1.0"

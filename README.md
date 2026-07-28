@@ -33,7 +33,7 @@ pip install -e .
 ## Quick start
 
 ```bash
-python -m modforms.cli --form delta --region disk --style phase-contour --cmap cividis --out delta.png
+python -m modforms.cli plot --form delta --region disk --style phase-contour --cmap cividis --out delta.png
 ```
 
 ```python
@@ -81,13 +81,53 @@ Every style is a plain function `f(values, **kwargs) -> RGB array` in
 
 The paper's other three running examples (`g`, weight 4 level 5; `f_105`,
 weight 2 level 105; `f_10`, weight 20 level 10) are LMFDB newforms with
-non-trivial coefficients. To reproduce those figures:
+non-trivial coefficients — see "Importing from the LMFDB" below for the
+easiest way to pull those in directly, or `examples/custom_form_example.py`
+for loading coefficients by hand with `QExpansion.from_list`/`from_csv`.
 
-1. Grab the q-expansion from the LMFDB, e.g.
-   <https://www.lmfdb.org/ModularForm/GL2/Q/holomorphic/5/4/a/a/1/1/>.
-2. Load it with `QExpansion.from_list([...])` or `QExpansion.from_csv(path)`.
+## Importing from the LMFDB
 
-See `examples/custom_form_example.py`.
+`modforms.lmfdb` talks to the [LMFDB's public API](https://www.lmfdb.org/api/)
+to browse and import newforms directly, so you don't have to copy
+coefficients by hand.
+
+Browse forms by level/weight:
+
+```bash
+python -m modforms.cli search --level 105 --weight 2
+```
+
+```python
+from modforms import lmfdb
+lmfdb.print_newforms(level=105, weight=2)
+for doc in lmfdb.search_newforms(level=105, weight=2):
+    print(doc["label"], doc["dim"])
+```
+
+Fetch a form's q-expansion and plot it directly, using either the
+Galois-orbit label from the paper (e.g. `5.4.a.a`, which assumes the first
+embedding) or a fully embedded label (`5.4.a.a.1.1`):
+
+```bash
+python -m modforms.cli plot --lmfdb 5.4.a.a --region disk --style phase-contour --out g.png
+```
+
+```python
+from modforms import lmfdb, plotting
+
+g = lmfdb.fetch_qexpansion("5.4.a.a", n_terms=400)
+plotting.plot_form(g, region="disk", style="phase-contour", out="g.png")
+```
+
+**Caveat:** this was written against the LMFDB API's documented shape
+(`mf_newforms` for search, `mf_hecke_cc` for numerical q-expansion
+coefficients), but the sandbox this was developed in has no network
+access to `lmfdb.org`, so it could not be exercised against a live
+response. Field names are isolated as constants at the top of
+`modforms/lmfdb.py`; if the real API returns different field names,
+`fetch_qexpansion`/`search_newforms` will raise `LMFDBSchemaError` showing
+the actual keys in the response, which should make it a one-line fix.
+Please open an issue (or just fix it) if you hit that.
 
 ## How it works
 
@@ -114,6 +154,7 @@ src/modforms/
   coloring.py     the plotting styles (Sections 2 and 3 of the paper)
   plotting.py     evaluate_on_region / render / save_png / plot_form
   presets.py      the regions used in the paper's figures
+  lmfdb.py        import/browse newforms from the LMFDB's API
   cli.py          command-line interface
 examples/
 tests/
