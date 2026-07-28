@@ -226,6 +226,22 @@ with st.sidebar:
 
     render_clicked = st.button("▶ Render", type="primary", width="stretch")
 
+# Fingerprint of everything that affects the rendered image, so we can tell
+# the user when the on-screen preview no longer matches the current
+# controls (e.g. toggling Night mode doesn't retroactively repaint an
+# already-rendered image -- only the next Render does).
+current_fingerprint = (
+    getattr(form, "label", None),
+    len(form.coeffs) if form is not None else None,
+    region,
+    box,
+    disk_extent,
+    style,
+    tuple(sorted(style_kwargs.items())),
+    res,
+    dark_mode,
+)
+
 if render_clicked:
     if form is None:
         st.error("No form loaded — pick a built-in form, load an LMFDB label, or upload a CSV.")
@@ -243,8 +259,11 @@ if render_clicked:
             st.session_state["last_png"] = rgb_to_png_bytes(rgb)
             label = getattr(form, "label", None) or "custom form"
             st.session_state["last_caption"] = f"{label} — {STYLE_LABELS.get(style, style)}"
+            st.session_state["last_render_fingerprint"] = current_fingerprint
 
 if "last_png" in st.session_state:
+    if st.session_state.get("last_render_fingerprint") != current_fingerprint:
+        st.warning("Settings changed since this render — click **▶ Render** to update the preview.")
     st.image(st.session_state["last_png"], caption=st.session_state["last_caption"])
     st.download_button("Download PNG", st.session_state["last_png"], file_name="modform.png", mime="image/png")
 else:
