@@ -135,15 +135,16 @@ g = lmfdb.fetch_qexpansion("5.4.a.a", n_terms=400)
 plotting.plot_form(g, region="disk", style="phase-contour", out="g.png")
 ```
 
-**Caveat:** this was written against the LMFDB API's documented shape
-(`mf_newforms` for search, `mf_hecke_cc` for numerical q-expansion
-coefficients), but the sandbox this was developed in has no network
-access to `lmfdb.org`, so it could not be exercised against a live
-response. Field names are isolated as constants at the top of
-`modforms/lmfdb.py`; if the real API returns different field names,
-`fetch_qexpansion`/`search_newforms` will raise `LMFDBSchemaError` showing
-the actual keys in the response, which should make it a one-line fix.
-Please open an issue (or just fix it) if you hit that.
+`fetch_qexpansion`'s parsing has been confirmed against a live response
+(`105.2.a.a.1.1`): documents come back as `{"data": [...]}`, and
+coefficients live in `an_normalized` — a list of `[re, im]` pairs starting
+at n=1 that are Hecke-normalized (divided by `n**((weight-1)/2)`), which
+`fetch_qexpansion` un-normalizes using the document's own `weight` field.
+`search_newforms` (the `mf_newforms` collection) hasn't specifically been
+checked against a live response, but uses the same defensive pattern: if
+a query ever returns a document shaped differently than expected, you get
+an `LMFDBSchemaError` showing the actual keys found instead of a bare
+`KeyError`.
 
 ## How it works
 

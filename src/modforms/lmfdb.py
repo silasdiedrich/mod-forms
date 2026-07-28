@@ -15,13 +15,17 @@ Two collections are used here:
   LMFDB itself uses to draw its own plots, and is what lets us evaluate
   f(z) = sum a_n q^n as an actual complex-valued q-expansion.
 
-Caveat: this was written against the LMFDB API's documented shape, but
-could not be exercised against a live server in the environment it was
-written in (that sandbox's network policy blocks outbound requests to
-lmfdb.org). The field names below are isolated as module-level constants
-so a mismatch is a one-line fix; if a live response doesn't have a field
-we expect, the functions here raise ``LMFDBSchemaError`` with the *actual*
-keys found, rather than failing silently or with a bare KeyError.
+The ``mf_hecke_cc`` schema was confirmed against a live response for
+"105.2.a.a.1.1": documents come back wrapped as
+``{"data": [{...}], ...}``, and coefficients live in ``an_normalized``, a
+list of ``[re, im]`` pairs starting at n=1 (so ``an_normalized[0]`` is a_1)
+that are Hecke-normalized -- divided by ``n**((weight-1)/2)`` -- rather
+than the raw q-expansion coefficients the paper plots. We undo that
+normalization using the document's own ``weight`` field. Field names are
+still isolated as module-level constants below in case a different query
+shape (e.g. a higher-dimension newform) doesn't match; a mismatch raises
+``LMFDBSchemaError`` with the actual keys found rather than a bare
+KeyError.
 """
 
 import json
@@ -36,11 +40,11 @@ API_BASE = "https://www.lmfdb.org/api"
 NEWFORMS_COLLECTION = "mf_newforms"
 HECKE_CC_COLLECTION = "mf_hecke_cc"
 
-# Field names within mf_hecke_cc documents. Isolated here in case the
-# live schema differs from what's assumed.
+# Field names within mf_hecke_cc documents. Isolated here in case a
+# different query hits a differently-shaped document.
 CC_LABEL_FIELD = "label"
-CC_AN_FIELD = "an"  # list of {"re": ..., "im": ...} for n = 2, 3, ...
-CC_A1_IS_ONE = True  # Hecke-normalized newforms always have a_1 = 1
+CC_WEIGHT_FIELD = "weight"
+CC_AN_FIELD = "an_normalized"  # list of [re, im] pairs, index 0 = a_1, Hecke-normalized
 
 
 class LMFDBError(RuntimeError):
@@ -140,6 +144,18 @@ def _normalize_embedded_label(label):
     )
 
 
+def _parse_an_entry(entry):
+    """An an_normalized entry is a [re, im] pair on the live API; accept a
+    {"re": ..., "im": ...} dict too, just in case some other query shape
+    returns that instead.
+    """
+    if isinstance(entry, dict):
+        return entry["re"], entry["im"]
+    if isinstance(entry, (list, tuple)) and len(entry) == 2:
+        return entry[0], entry[1]
+    raise LMFDBSchemaError(f"unrecognized {CC_AN_FIELD!r} entry format: {entry!r}")
+
+
 def fetch_qexpansion(label, n_terms=400):
     """Fetch a specific embedding of a newform's q-expansion from the
     LMFDB and return it as a :class:`~modforms.QExpansion`, ready to plot.
@@ -153,17 +169,21 @@ def fetch_qexpansion(label, n_terms=400):
     if not results:
         raise LMFDBError(f"no data found for {embedded_label!r} in {HECKE_CC_COLLECTION} ({url})")
     doc = results[0]
-    if CC_AN_FIELD not in doc:
-        raise LMFDBSchemaError(
-            f"expected an {CC_AN_FIELD!r} field in the {HECKE_CC_COLLECTION} document "
-            f"for {embedded_label!r}, got keys: {sorted(doc)}. "
-            f"Update CC_AN_FIELD (and friends) in modforms/lmfdb.py to match."
-        )
+    for field in (CC_AN_FIELD, CC_WEIGHT_FIELD):
+        if field not in doc:
+            raise LMFDBSchemaError(
+                f"expected a {field!r} field in the {HECKE_CC_COLLECTION} document "
+                f"for {embedded_label!r}, got keys: {sorted(doc)}. "
+                f"Update the CC_* constants in modforms/lmfdb.py to match."
+            )
 
-    an = doc[CC_AN_FIELD]
-    coeffs = [1.0 + 0.0j] if CC_A1_IS_ONE else []
-    remaining = n_terms - len(coeffs)
-    for entry in an[:remaining]:
-        coeffs.append(complex(entry["re"], entry["im"]))
+    weight = doc[CC_WEIGHT_FIELD]
+    an_normalized = doc[CC_AN_FIELD]
+    n_use = min(n_terms, len(an_normalized))
 
-    return QExpansion(coeffs, start=1, label=embedded_label)
+    coeffs = []
+    for n in range(1, n_use + 1):
+        re, im = _parse_an_entry(an_normalized[n - 1])
+        coeffs.append(complex(re, im) * n ** ((weight - 1) / 2))
+
+    return QExpansion(coeffs, start=1, weight=weight, label=embedded_label)
