@@ -28,8 +28,11 @@ Mandelbrot zoom clip) and the disk model's cusps genuinely do show
 self-similar, Ford-circle-like nested structure as you approach them.
 """
 
+import os
 import subprocess
+import threading
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -149,29 +152,45 @@ class Timeline:
                 return a, b, raw_p
         return kfs[-1], kfs[-1], 0.0  # pragma: no cover - unreachable given sorted keyframes
 
-    def check_safety(self):
+    def check_safety(self, dtype=None):
         """Rough, non-blocking warnings about keyframes whose zoom looks
         too deep for their term count to render cleanly (see module
         docstring). Returns a list of warning strings (empty if none).
+
+        ``dtype``, if ``numpy.complex64`` (the "single precision" speed
+        option -- see :func:`render_video`), roughly sextuples the safe-y
+        floor: measured by actually rendering and diff'ing single- vs
+        double-precision output at a range of depths, complex64 starts
+        showing clearly visible artifacts (shifted contour lines, from
+        Fourier terms underflowing complex64's ~7 significant digits
+        much sooner than complex128's ~15-16) around 5-10x shallower than
+        where complex128 does.
         """
+        precision_margin = 6.0
+        if dtype is not None and np.dtype(dtype).itemsize <= 8:
+            precision_margin = 36.0
         warnings = []
         for kf in self.keyframes:
             n_terms = kf.form.get("n_terms", 400)
             if kf.region == "halfplane":
                 y_min = kf.center[1] - kf.scale
-                safe_y = 6 / (2 * np.pi * n_terms)
+                safe_y = precision_margin / (2 * np.pi * n_terms)
                 if y_min < safe_y:
                     warnings.append(
                         f"t={kf.time}s: halfplane keyframe approaches y={y_min:.2e}, below the "
-                        f"~{safe_y:.2e} floor for n_terms={n_terms} -- expect truncation "
-                        f"artifacts. Increase n_terms or don't zoom this deep."
+                        f"~{safe_y:.2e} floor for n_terms={n_terms}"
+                        f"{' at single precision' if precision_margin > 6 else ''} -- expect "
+                        f"truncation artifacts. Increase n_terms, use double precision, or don't "
+                        f"zoom this deep."
                     )
-            elif kf.scale < 1e-4:
-                warnings.append(
-                    f"t={kf.time}s: disk keyframe scale={kf.scale:.1e} is a very deep zoom -- "
-                    f"float64 precision and q-expansion truncation will likely show artifacts "
-                    f"below roughly 1e-4 to 1e-5."
-                )
+            else:
+                disk_floor = 1e-4 * (precision_margin / 6.0)
+                if kf.scale < disk_floor:
+                    warnings.append(
+                        f"t={kf.time}s: disk keyframe scale={kf.scale:.1e} is a very deep zoom -- "
+                        f"precision and q-expansion truncation will likely show artifacts below "
+                        f"roughly {disk_floor:.0e}."
+                    )
         return warnings
 
 
@@ -185,18 +204,21 @@ def _same_render_params(a, b):
     )
 
 
-def _render_keyframe_content(kf, box, shape):
+def _render_keyframe_content(kf, box, shape, dtype=None):
     form = resolve_form(kf.form)
     style_kwargs = reproduce.style_kwargs_from_metadata({"style_kwargs": kf.style_kwargs})
     if kf.region == "disk":
-        vals = plotting.evaluate_on_region(form, region="disk", disk_box=box, shape=shape)
+        vals = plotting.evaluate_on_region(form, region="disk", disk_box=box, shape=shape, dtype=dtype)
     else:
-        vals = plotting.evaluate_on_region(form, region="halfplane", box=box, shape=shape)
+        vals = plotting.evaluate_on_region(form, region="halfplane", box=box, shape=shape, dtype=dtype)
     return plotting.render(vals, style=kf.style, background=kf.background, **style_kwargs)
 
 
-def render_frame(timeline, t, width, height):
-    """Render a single (height, width, 3) RGB frame at time ``t``."""
+def render_frame(timeline, t, width, height, dtype=None):
+    """Render a single (height, width, 3) RGB frame at time ``t``.
+
+    ``dtype``: see :func:`render_video`.
+    """
     aspect = width / height
     a, b, raw_p = timeline.bracket(t)
     p = smootherstep(raw_p)
@@ -209,14 +231,14 @@ def render_frame(timeline, t, width, height):
     half_w = scale * aspect
     box = ((cx - half_w, cx + half_w), (cy - half_h, cy + half_h))
 
-    rgb_a = _render_keyframe_content(a, box, (height, width))
+    rgb_a = _render_keyframe_content(a, box, (height, width), dtype=dtype)
     if raw_p <= 0.0 or _same_render_params(a, b):
         return rgb_a
-    rgb_b = _render_keyframe_content(b, box, (height, width))
+    rgb_b = _render_keyframe_content(b, box, (height, width), dtype=dtype)
     return rgb_a * (1 - p) + rgb_b * p
 
 
-def estimate_render_time(timeline, fps=30, width=1280, height=720, sample_frames=3):
+def estimate_render_time(timeline, fps=30, width=1280, height=720, sample_frames=3, dtype=None):
     """Render a few sample frames to estimate total time for the full
     video. Returns (n_frames, seconds_per_frame, estimated_total_seconds).
     """
@@ -228,14 +250,51 @@ def estimate_render_time(timeline, fps=30, width=1280, height=720, sample_frames
     sample_times = np.linspace(0, timeline.duration, min(sample_frames, n_frames))
     t0 = time.time()
     for t in sample_times:
-        render_frame(timeline, float(t), width, height)
+        render_frame(timeline, float(t), width, height, dtype=dtype)
     elapsed = time.time() - t0
     per_frame = elapsed / len(sample_times)
     return n_frames, per_frame, n_frames * per_frame
 
 
+def _render_frame_bytes(args):
+    """Top-level (picklable) worker for ProcessPoolExecutor: renders one
+    frame and returns it as raw, correctly-oriented RGB24 bytes ready to
+    write straight to ffmpeg's stdin.
+    """
+    timeline, t, width, height, dtype = args
+    rgb = render_frame(timeline, t, width, height, dtype=dtype)
+    arr = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
+    arr = np.flipud(arr)  # increasing y upward, matching the paper/PNG convention
+    return arr.tobytes()
+
+
+def _can_parallelize(timeline, width, height, dtype):
+    """A one-frame smoke test, so a real render either commits fully to
+    the parallel path or falls back to sequential *before* writing
+    anything to ffmpeg -- never partway through (which would otherwise
+    risk writing some frames twice if parallel execution broke down
+    mid-render).
+    """
+    try:
+        with ProcessPoolExecutor(max_workers=1) as executor:
+            executor.submit(_render_frame_bytes, (timeline, 0.0, width, height, dtype)).result(timeout=120)
+        return True
+    except Exception:
+        return False
+
+
 def render_video(
-    timeline, out_path, fps=30, width=1280, height=720, crf=18, preset="medium", progress=True, progress_callback=None
+    timeline,
+    out_path,
+    fps=30,
+    width=1280,
+    height=720,
+    crf=18,
+    preset="medium",
+    progress=True,
+    progress_callback=None,
+    dtype=None,
+    workers=None,
 ):
     """Render ``timeline`` to an H.264 MP4 at ``out_path`` by piping raw
     RGB24 frames into ffmpeg (requires ``ffmpeg`` on PATH).
@@ -244,6 +303,20 @@ def render_video(
     ``progress_callback(frames_done, total_frames)`` -- e.g. to drive a
     ``st.progress`` bar in a UI, independent of the ``progress=True``
     textual output (meant for a terminal).
+
+    ``dtype``: pass ``numpy.complex64`` for roughly 3x faster evaluation
+    at some precision cost (see ``QExpansion.__call__`` and
+    ``Timeline.check_safety``); the default (``None``) uses complex128,
+    unchanged from before this option existed.
+
+    ``workers``: since every frame is an independent computation, frames
+    render in parallel across this many OS processes by default (``None``
+    = all CPU cores) -- the single biggest lever here, since it doesn't
+    trade away any quality. Pass ``1`` to force sequential rendering. A
+    one-frame smoke test runs first; if parallel execution can't be set
+    up for any reason, the whole render falls back to sequential rather
+    than failing (or, worse, partially duplicating frames by falling back
+    mid-stream).
     """
     n_frames = max(1, round(timeline.duration * fps))
     cmd = [
@@ -277,25 +350,61 @@ def render_video(
             "`brew install ffmpeg`, or on Windows via winget/choco or ffmpeg.org) to render video."
         ) from e
 
+    # Drain ffmpeg's stderr continuously in the background: ffmpeg writes a
+    # steady stream of encoding info there, and if nobody reads it while we
+    # write frames, the OS pipe buffer fills up and ffmpeg blocks trying to
+    # write to it -- which blocks it from reading more stdin, which blocks
+    # our writes below, deadlocking the whole render. This was previously
+    # latent (slow enough sequential writes gave ffmpeg time to flush on its
+    # own) but shows up reliably once frames arrive faster, e.g. once
+    # multiple worker processes are producing them in parallel.
+    stderr_chunks = []
+
+    def _drain_stderr():
+        for line in iter(proc.stderr.readline, b""):
+            stderr_chunks.append(line)
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
+
+    # Resolve every form up front in this process, so a one-time cost (e.g.
+    # an LMFDB fetch) isn't redundantly repeated by each worker process.
+    for kf in timeline.keyframes:
+        resolve_form(kf.form)
+
+    workers = workers if workers is not None else (os.cpu_count() or 1)
+    use_parallel = workers > 1 and _can_parallelize(timeline, width, height, dtype)
+
     t0 = time.time()
-    for i in range(n_frames):
-        rgb = render_frame(timeline, i / fps, width, height)
-        arr = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
-        arr = np.flipud(arr)  # increasing y upward, matching the paper/PNG convention
-        proc.stdin.write(arr.tobytes())
+
+    def _report(i):
         if progress_callback is not None:
             progress_callback(i + 1, n_frames)
         if progress and (i % max(1, n_frames // 200) == 0 or i == n_frames - 1):
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed if elapsed > 0 else 0
             eta_min = (n_frames - i - 1) / rate / 60 if rate > 0 else float("inf")
-            print(f"\rframe {i + 1}/{n_frames}  ({rate:.2f} fps, ETA {eta_min:.1f} min)", end="", flush=True)
+            mode = f"{workers} workers" if use_parallel else "sequential"
+            print(f"\rframe {i + 1}/{n_frames}  ({rate:.2f} fps, {mode}, ETA {eta_min:.1f} min)", end="", flush=True)
+
+    if use_parallel:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            frame_args = ((timeline, i / fps, width, height, dtype) for i in range(n_frames))
+            for i, frame_bytes in enumerate(executor.map(_render_frame_bytes, frame_args, chunksize=4)):
+                proc.stdin.write(frame_bytes)
+                _report(i)
+    else:
+        for i in range(n_frames):
+            frame_bytes = _render_frame_bytes((timeline, i / fps, width, height, dtype))
+            proc.stdin.write(frame_bytes)
+            _report(i)
     if progress:
         print()
 
     proc.stdin.close()
-    stderr = proc.stderr.read().decode(errors="replace")
     ret = proc.wait()
+    stderr_thread.join(timeout=5)
+    stderr = b"".join(stderr_chunks).decode(errors="replace")
     if ret != 0:
         raise RuntimeError(f"ffmpeg failed (exit {ret}):\n{stderr[-4000:]}")
     return out_path

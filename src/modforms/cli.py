@@ -21,6 +21,9 @@ function.
 import argparse
 import importlib.util
 import json
+import os
+
+import numpy as np
 
 from . import forms, lmfdb, plotting, reproduce, video
 from .coloring import STYLES, STYLE_PARAMS
@@ -114,6 +117,21 @@ def build_parser():
     )
     video_p.add_argument(
         "--dry-run", action="store_true", help="Print the frame count and a time estimate, then exit."
+    )
+    video_p.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Frames render in parallel across this many processes (default: all CPU cores; pass 1 for sequential).",
+    )
+    video_p.add_argument(
+        "--precision",
+        choices=["double", "single"],
+        default="double",
+        help=(
+            "'single' (complex64) is roughly 3x faster but has a much shallower safe zoom depth "
+            "than the default 'double' (complex128) -- see Timeline.check_safety."
+        ),
     )
 
     return p
@@ -229,18 +247,22 @@ def _resolve_video_settings(args):
 def _run_video(args):
     timeline = _load_timeline(args.timeline)
     settings = _resolve_video_settings(args)
+    dtype = np.complex64 if args.precision == "single" else None
+    workers = args.workers if args.workers is not None else (os.cpu_count() or 1)
 
-    for warning in timeline.check_safety():
+    for warning in timeline.check_safety(dtype=dtype):
         print(f"warning: {warning}")
 
     n_frames, per_frame, total_est = video.estimate_render_time(
-        timeline, fps=settings["fps"], width=settings["width"], height=settings["height"]
+        timeline, fps=settings["fps"], width=settings["width"], height=settings["height"], dtype=dtype
     )
     mode = "preview" if args.preview else "full"
     print(
-        f"[{mode}] {settings['width']}x{settings['height']} @ {settings['fps']}fps -- "
+        f"[{mode}] {settings['width']}x{settings['height']} @ {settings['fps']}fps, "
+        f"{args.precision} precision, {workers} worker(s) -- "
         f"{n_frames} frames ({timeline.duration:.1f}s of video), "
-        f"~{per_frame * 1000:.0f}ms/frame, estimated total: {total_est / 60:.1f} min"
+        f"~{per_frame * 1000:.0f}ms/frame (single-process estimate), "
+        f"estimated total: {total_est / workers / 60:.1f} min with {workers} worker(s)"
     )
     if args.dry_run:
         return
@@ -253,6 +275,8 @@ def _run_video(args):
         height=settings["height"],
         crf=args.crf,
         preset=settings["preset"],
+        dtype=dtype,
+        workers=workers,
     )
     print(f"wrote {args.out}")
 

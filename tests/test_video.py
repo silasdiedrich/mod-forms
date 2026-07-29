@@ -173,3 +173,89 @@ def test_render_video_end_to_end(tmp_path):
     )
     assert "32,32" in probe.stdout
     assert "h264" in probe.stdout
+
+
+def _decode_all_frames(path):
+    """Decode every frame of an mp4 as a (n_frames, h, w, 3) uint8 array,
+    for exact pixel comparison between renders.
+    """
+    import numpy as np
+    from PIL import Image
+    import tempfile
+    import os
+
+    with tempfile.TemporaryDirectory() as d:
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-i", str(path), os.path.join(d, "f_%04d.png")],
+            check=True,
+        )
+        files = sorted(os.listdir(d))
+        return np.stack([np.asarray(Image.open(os.path.join(d, f)).convert("RGB")) for f in files])
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg not installed")
+def test_render_video_parallel_matches_sequential_exactly(tmp_path):
+    """Regression test for a real deadlock this parallel path had: ffmpeg's
+    stderr filling up while nobody drained it (harmless when frames arrived
+    slowly one at a time, but hung reliably once multiple worker processes
+    produced them fast enough). Also confirms parallel workers produce
+    bit-for-bit identical output to sequential -- same deterministic
+    computation, just distributed.
+    """
+    kf_a = video.Keyframe(
+        time=0.0, form=DELTA, region="disk", scale=1.02, style="colormap-phase-contour",
+        style_kwargs={"base": 2.0, "cmap": video.builtin_cmap("cividis")}, background=(0.0, 0.0, 0.0),
+    )
+    kf_b = video.Keyframe(
+        time=2.0, form=DELTA, region="disk", center=(0.0, 0.85), scale=0.2, style="colormap-phase-contour",
+        style_kwargs={"base": 2.0, "cmap": video.builtin_cmap("twilight")}, background=(0.0, 0.0, 0.0),
+    )
+    tl = video.Timeline([kf_a, kf_b])
+
+    seq_path = tmp_path / "seq.mp4"
+    par_path = tmp_path / "par.mp4"
+    video.render_video(tl, str(seq_path), fps=12, width=48, height=48, workers=1, progress=False)
+    video.render_video(tl, str(par_path), fps=12, width=48, height=48, workers=4, progress=False)
+
+    seq_frames = _decode_all_frames(seq_path)
+    par_frames = _decode_all_frames(par_path)
+    assert seq_frames.shape == par_frames.shape
+    np.testing.assert_array_equal(seq_frames, par_frames)
+
+
+def test_can_parallelize_smoke_test_succeeds():
+    tl = video.Timeline([video.Keyframe(time=0.0, form=DELTA, region="disk", scale=1.02)])
+    assert video._can_parallelize(tl, 20, 20, None) is True
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg not installed")
+def test_render_video_falls_back_to_sequential_when_parallel_unavailable(tmp_path, monkeypatch):
+    """If the parallel smoke test fails for any reason, the whole render
+    should fall back to sequential rather than raising or (worse) writing
+    some frames via one path and the rest via another.
+    """
+    monkeypatch.setattr(video, "_can_parallelize", lambda *a, **k: False)
+    tl = video.Timeline(
+        [video.Keyframe(time=0.0, form=DELTA, region="disk", scale=1.02), video.Keyframe(time=0.3, form=DELTA, region="disk", scale=0.5)]
+    )
+    out = tmp_path / "fallback.mp4"
+    video.render_video(tl, str(out), fps=4, width=24, height=24, workers=4, progress=False)
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_render_frame_accepts_complex64_dtype_and_stays_in_valid_range():
+    tl = video.Timeline([video.Keyframe(time=0.0, form=DELTA, region="disk", scale=1.02)])
+    rgb = video.render_frame(tl, 0.0, width=30, height=30, dtype=np.complex64)
+    assert rgb.shape == (30, 30, 3)
+    assert np.nanmin(rgb) >= 0.0 and np.nanmax(rgb) <= 1.0
+
+
+def test_check_safety_single_precision_is_stricter_than_double():
+    # A depth that's safe at double precision but should be flagged at
+    # single precision (complex64), per the measured ~6x margin difference.
+    kf = video.Keyframe(time=0.0, form={"source": "delta", "n_terms": 600}, region="halfplane", center=(0.618, 0.01), scale=0.005)
+    tl = video.Timeline([kf])
+    assert tl.check_safety() == []  # fine at double precision
+    warnings = tl.check_safety(dtype=np.complex64)
+    assert len(warnings) == 1
+    assert "single precision" in warnings[0]

@@ -137,6 +137,13 @@ don't close the tab), so for anything beyond a short/preview-quality
 clip, exporting a timeline script and rendering via the CLI in the
 background (below) is more practical than waiting in the browser.
 
+**Precision** and **Parallel workers** (next to Quality) control the two
+performance levers described below under "Performance" — Parallel
+workers defaults to your CPU's core count (frames render independently,
+so this is close to a free speedup), Precision defaults to Double (safe);
+switching it to Single roughly triples speed at the cost of a shallower
+safe zoom depth, and any resulting safety warnings update live.
+
 **Loading a timeline without typing it in**: the "Load a preset timeline"
 dropdown has a few ready-made sequences (a short "golden cusp zoom" demo,
 and a full "30-min journey" — see below), or expand "Import / export
@@ -206,13 +213,25 @@ TIMELINE = [
 it prints the frame count and a time estimate from a few sample frames,
 so you're not guessing at how long a render will actually take. The
 bottleneck is the Python/NumPy evaluation of the form, not video
-encoding, so resolution matters a lot: expect on the order of a second
-per 720p frame with the contour styles, meaning a 30fps minute of 720p
-video is roughly a half hour to render (varies a lot by machine and
-style). Render a `--preview` draft first to check the composition and
-timing (a few seconds to a couple of minutes, depending on length), then
-commit to a full-resolution overnight/
-background render for the real thing.
+encoding, so resolution matters a lot. Render a `--preview` draft first to
+check the composition and timing, then commit to a full-resolution
+overnight/background render for the real thing.
+
+**Performance**: frames render in parallel across CPU cores by default
+(`--workers N` to control this, `--workers 1` to force sequential) —
+since every frame is an independent computation, this is close to a free
+speedup (same output, just distributed; verified bit-for-bit identical
+against sequential rendering). `--precision single` additionally switches
+the core math from complex128 to complex64, measured roughly 3x faster
+on the dominant cost (the q-expansion evaluation), at a real accuracy
+cost: complex64 has ~7 significant digits vs complex128's ~15-16, so
+Fourier terms underflow into rounding error much sooner, meaning deep
+zooms show truncation artifacts at a noticeably shallower depth (measured
+at roughly 6x shallower for a given term count) than at the default
+double precision. `Timeline.check_safety()` accounts for whichever
+precision you pass it. Good uses for single precision: fast previews, or
+any part of a timeline that doesn't zoom especially deep; not recommended
+for the golden-ratio-style deep-zoom passages.
 
 **Zoom depth is not literally infinite.** Unlike Mandelbrot's escape-time
 iteration, a modular form's truncated q-expansion doesn't generate

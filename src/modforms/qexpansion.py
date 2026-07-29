@@ -34,17 +34,28 @@ class QExpansion:
     def __len__(self):
         return len(self.coeffs)
 
-    def __call__(self, z):
+    def __call__(self, z, dtype=None):
         """Evaluate on a numpy array (or scalar) of complex points z.
 
         Uses in-place array ops in the Horner loop (rather than
         ``acc = acc * q + a``) to avoid allocating a fresh temporary array
         on every one of the (typically hundreds of) iterations, which
         matters a lot at the pixel counts a plot can involve.
+
+        ``dtype`` defaults to complex128 (unchanged behavior). Passing
+        ``numpy.complex64`` roughly triples throughput on this loop (the
+        dominant cost of a render -- see modforms.video's "precision"
+        option), at the cost of effectively truncating the usable term
+        count sooner for very small |q| (deep zooms toward y=0): complex64
+        has ~7 significant decimal digits vs complex128's ~15-16, so terms
+        contributing less than roughly 1e-7 of the running sum vanish into
+        rounding error instead of ~1e-15, i.e. roughly half as many
+        Fourier terms are actually load-bearing at extreme zoom depth.
         """
-        q = np.exp(2j * np.pi * np.asarray(z, dtype=complex))
-        acc = np.zeros_like(q, dtype=complex)
-        for a in self.coeffs[::-1]:
+        dtype = dtype or complex
+        q = np.exp(2j * np.pi * np.asarray(z, dtype=dtype))
+        acc = np.zeros_like(q, dtype=dtype)
+        for a in self.coeffs[::-1].astype(dtype):
             acc *= q
             acc += a
         if self.start == 1:

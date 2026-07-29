@@ -7,11 +7,13 @@ Run with:
 """
 
 import json
+import os
 import re
 import shutil
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import streamlit as st
 
 from modforms import forms, lmfdb, plotting, presets, reproduce
@@ -816,7 +818,27 @@ def render_video_mode():
 
         st.caption(f"Duration: {timeline.duration:.1f}s at {width}×{height} @ {fps}fps")
 
-        for w in timeline.check_safety():
+        perf_cols = st.columns(2)
+        precision_choice = perf_cols[0].radio(
+            "Precision",
+            ["Double", "Single"],
+            horizontal=True,
+            help=(
+                "Single (complex64) is roughly 3x faster but has a much shallower safe zoom "
+                "depth than Double (complex128) before showing truncation artifacts."
+            ),
+        )
+        dtype = np.complex64 if precision_choice == "Single" else None
+        default_workers = os.cpu_count() or 1
+        workers = perf_cols[1].number_input(
+            "Parallel workers",
+            min_value=1,
+            max_value=max(1, default_workers * 2),
+            value=default_workers,
+            help="Frames render independently, so this many CPU cores can work on them at once.",
+        )
+
+        for w in timeline.check_safety(dtype=dtype):
             st.warning(w)
 
         st.divider()
@@ -824,7 +846,7 @@ def render_video_mode():
         preview_t = st.slider("Time (s)", 0.0, max(0.1, timeline.duration), 0.0, key="video_preview_t")
         if st.button("🔍 Preview this frame"):
             with st.spinner("Rendering preview frame..."):
-                rgb = video_mod.render_frame(timeline, preview_t, width, height)
+                rgb = video_mod.render_frame(timeline, preview_t, width, height, dtype=dtype)
                 st.session_state["video_preview_png"] = plotting.rgb_to_png_bytes(rgb)
         if "video_preview_png" in st.session_state:
             st.image(st.session_state["video_preview_png"])
@@ -833,8 +855,13 @@ def render_video_mode():
         st.subheader("Render")
         if st.button("⏱ Estimate render time"):
             with st.spinner("Timing a few sample frames..."):
-                n_frames, per_frame, total_s = video_mod.estimate_render_time(timeline, fps=fps, width=width, height=height)
-            st.info(f"{n_frames} frames, ~{per_frame * 1000:.0f} ms/frame → estimated **{total_s / 60:.1f} min**")
+                n_frames, per_frame, total_s = video_mod.estimate_render_time(
+                    timeline, fps=fps, width=width, height=height, dtype=dtype
+                )
+            st.info(
+                f"{n_frames} frames, ~{per_frame * 1000:.0f} ms/frame single-process → "
+                f"estimated **{total_s / workers / 60:.1f} min** with {workers} worker(s)"
+            )
 
         render_video_clicked = st.button("🎬 Render Video", type="primary", disabled=not ffmpeg_available, width="stretch")
 
@@ -857,6 +884,8 @@ def render_video_mode():
                         crf=crf,
                         progress=False,
                         progress_callback=on_progress,
+                        dtype=dtype,
+                        workers=int(workers),
                     )
                     st.session_state["video_bytes"] = out_path.read_bytes()
                     st.success("Done!")

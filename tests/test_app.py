@@ -391,3 +391,53 @@ def test_video_30min_preset_loads_with_correct_duration_and_no_safety_warnings()
     duration_caption = [c for c in at.main.caption if "Duration:" in c.value][0]
     assert "1800.0s" in duration_caption.value
     assert len(at.main.warning) == 0  # no zoom-too-deep safety warnings
+
+
+def test_video_precision_toggle_affects_safety_warnings():
+    import json as json_mod
+
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    # A keyframe safe at double precision but not at single (loaded via the
+    # already-verified JSON import path, since directly mutating the
+    # video_keyframes dicts wouldn't take effect -- the widgets' own sticky
+    # session-state values win over that on the next rerun).
+    borderline_timeline = [
+        {"time": 0.0, "region": "halfplane", "center_x": 0.618, "center_y": 0.3, "scale": 0.27, "n_terms": 600},
+        {"time": 10.0, "region": "halfplane", "center_x": 0.618, "center_y": 0.01, "scale": 0.005, "n_terms": 600},
+    ]
+    import_area = [t for t in at.main.text_area if "Paste timeline JSON" in t.label][0]
+    import_area.set_value(json_mod.dumps(borderline_timeline)).run(timeout=30)
+    [b for b in at.main.button if b.label == "Load from JSON"][0].click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.warning) == 0
+
+    precision_radio = [r for r in at.main.radio if r.label == "Precision"][0]
+    precision_radio.set_value("Single").run(timeout=30)
+    assert not at.exception
+    assert len(at.main.warning) == 1
+    assert "single precision" in at.main.warning[0].value
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg not installed")
+def test_video_render_with_parallel_workers_and_single_precision():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    res_select = [s for s in at.main.selectbox if s.label == "Resolution preset"][0]
+    res_select.set_value("Preview — 480x270 @ 15fps").run(timeout=30)
+
+    precision_radio = [r for r in at.main.radio if r.label == "Precision"][0]
+    precision_radio.set_value("Single").run(timeout=30)
+
+    workers_input = [n for n in at.main.number_input if n.label == "Parallel workers"][0]
+    workers_input.set_value(2).run(timeout=30)
+
+    render_button = [b for b in at.main.button if "Render Video" in b.label][0]
+    render_button.click().run(timeout=120)
+    assert not at.exception
+    assert "video_bytes" in at.session_state
+    assert len(at.session_state["video_bytes"]) > 0

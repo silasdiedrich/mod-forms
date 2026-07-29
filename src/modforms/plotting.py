@@ -12,7 +12,9 @@ from .grid import halfplane_grid, disk_grid, disk_grid_box, phi
 from .coloring import STYLES
 
 
-def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(600, 600), disk_extent=1.02, disk_box=None):
+def evaluate_on_region(
+    form, region="halfplane", box=((-1, 1), (0, 2)), shape=(600, 600), disk_extent=1.02, disk_box=None, dtype=None
+):
     """Evaluate ``form`` on a grid over either the halfplane box or the
     Poincare disk. Points outside the disk are set to NaN (Section 3.1,
     step 2's masking).
@@ -21,10 +23,16 @@ def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(6
     square with an arbitrary ``((x0, x1), (y0, y1))`` box in w-space, for
     zooming toward a point away from the disk's center (see
     :mod:`modforms.video`).
+
+    ``dtype`` is forwarded to the form's evaluation (see
+    ``QExpansion.__call__``) -- pass ``numpy.complex64`` for a substantial
+    speedup at some precision cost, otherwise leave as the default
+    (complex128).
     """
+    call_kwargs = {"dtype": dtype} if dtype is not None else {}
     if region == "halfplane":
         z = halfplane_grid(box, shape)
-        return form(z)
+        return form(z, **call_kwargs)
     if region == "disk":
         if disk_box is not None:
             w, mask = disk_grid_box(disk_box, shape)
@@ -36,7 +44,7 @@ def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(6
         # replace them with a harmless value before evaluating and mask
         # them out afterwards.
         safe_z = np.where(mask, z, 1j)
-        vals = form(safe_z)
+        vals = form(safe_z, **call_kwargs)
         return np.where(mask, vals, np.nan + 1j * np.nan)
     raise ValueError(f"unknown region {region!r}, expected 'halfplane' or 'disk'")
 
