@@ -4,12 +4,19 @@ an optional extra (``pip install -e ".[ui]"``).
 """
 
 import os
+import shutil
 
 import pytest
 
 st_testing = pytest.importorskip("streamlit.testing.v1")
 
 APP_PATH = os.path.join(os.path.dirname(__file__), "..", "app.py")
+HAVE_FFMPEG = shutil.which("ffmpeg") is not None
+
+
+def _switch_to_video_mode(at):
+    at.radio[0].set_value("🎬 Video").run(timeout=30)
+    return at
 
 
 def test_app_loads_without_exception():
@@ -200,3 +207,103 @@ def test_downloaded_png_embeds_reproduce_metadata():
     # Filename is descriptive, not the old generic "modform.png".
     assert at.session_state["last_filename"].endswith(".png")
     assert at.session_state["last_filename"] != "modform.png"
+
+
+def test_video_mode_loads_with_default_keyframes():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+    assert not at.exception
+    assert len(at.main.expander) == 2
+    assert at.main.expander[0].label.startswith("Keyframe 1")
+    assert at.main.expander[1].label.startswith("Keyframe 2")
+
+
+def test_video_add_and_remove_keyframe():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    add_button = [b for b in at.main.button if "Add keyframe" in b.label][0]
+    add_button.click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.expander) == 3
+
+    remove_buttons = [b for b in at.main.button if "Remove this keyframe" in b.label]
+    assert len(remove_buttons) == 3
+    remove_buttons[0].click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.expander) == 2
+
+
+def test_video_keyframe_style_change_is_scoped_to_that_keyframe():
+    """A regression check for the per-keyframe widget-key scheme: changing
+    keyframe 1's style must not affect keyframe 2's widgets/state.
+    """
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    style_selects = [s for s in at.main.selectbox if s.label == "Visualization style"]
+    assert len(style_selects) == 2
+    style_selects[0].set_value("colormap-phase").run(timeout=30)
+    assert not at.exception
+
+    style_selects = [s for s in at.main.selectbox if s.label == "Visualization style"]
+    assert style_selects[0].value == "colormap-phase"
+    # Keyframe 2 keeps its own (different) style, untouched.
+    assert style_selects[1].value != "colormap-phase" or style_selects[1] is style_selects[0]
+    assert style_selects[1].value == "colormap-phase-contour"
+
+
+def test_video_preview_frame_renders_image():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    preview_button = [b for b in at.main.button if "Preview this frame" in b.label][0]
+    preview_button.click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.image) == 1
+
+
+def test_video_estimate_render_time_shows_info():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    estimate_button = [b for b in at.main.button if "Estimate render time" in b.label][0]
+    estimate_button.click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.info) == 1
+    assert "frames" in at.main.info[0].value
+
+
+def test_video_render_button_disabled_without_ffmpeg(monkeypatch):
+    import shutil as shutil_mod
+
+    monkeypatch.setattr(shutil_mod, "which", lambda name: None)
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+    assert not at.exception
+    assert len(at.error) == 1
+    render_button = [b for b in at.main.button if "Render Video" in b.label][0]
+    assert render_button.disabled
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg not installed")
+def test_video_full_render_produces_playable_mp4():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    res_select = [s for s in at.main.selectbox if s.label == "Resolution preset"][0]
+    res_select.set_value("Preview — 480x270 @ 15fps").run(timeout=30)
+
+    render_button = [b for b in at.main.button if "Render Video" in b.label][0]
+    render_button.click().run(timeout=120)
+    assert not at.exception
+    assert "video_bytes" in at.session_state
+    assert len(at.session_state["video_bytes"]) > 0
+    assert len(at.main.error) == 0

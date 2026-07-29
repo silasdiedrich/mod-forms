@@ -32,17 +32,20 @@ pip install -e .
 
 ## UI
 
-The easiest way to explore this is the Streamlit app: dropdowns for the
-form (built-in, LMFDB import, or your own CSV), the region, the
-visualization style, and whatever parameters that style takes, plus a
-live preview and a PNG download button.
-
 ```bash
 pip install -e ".[ui]"     # or: pip install -r requirements-ui.txt
 streamlit run app.py
 ```
 
-This opens in your browser at `http://localhost:8501`.
+This opens in your browser at `http://localhost:8501`, with a Mode switch
+at the top: **🖼️ Image** for single stills, **🎬 Video** for building an
+ambient zoom video (see below) — both without touching any code.
+
+### Image mode
+
+Dropdowns for the form (built-in, LMFDB import, or your own CSV), the
+region, the visualization style, and whatever parameters that style
+takes, plus a live preview and a PNG download button.
 
 A few extras worth knowing about:
 
@@ -110,9 +113,36 @@ gallery (all styles, disk + halfplane) into `output/`.
 `modforms.video` renders continuous "infinite zoom" style videos —
 zooming toward a cusp while crossfading between colormaps and even
 switching forms mid-zoom — in the style of ambient fractal-zoom videos on
-YouTube. This is a scripting tool, not a UI button: a real render is
-thousands of frames and can take minutes to hours, which doesn't fit a
-synchronous web request the way the image UI does.
+YouTube.
+
+### In the UI
+
+Switch the app's Mode to **🎬 Video**. Each keyframe (a point in time with
+a form, view, style, and colormap) gets its own editable card — add one
+with **➕ Add keyframe** (it starts as a copy of the last one, zoomed in a
+bit further and 8s later, so you're tweaking rather than starting from
+scratch), remove one with the 🗑️ button on its card. Two adjacent
+keyframes with the same settings just hold that view; different settings
+zoom *and* crossfade between them (see "which forms transition well"
+below).
+
+Before committing to a real render: use **🔍 Preview this frame** to check
+any single moment instantly, and **⏱ Estimate render time** to see how
+long the full thing will actually take (based on timing a few real
+sample frames, not a guess) — then pick a resolution preset and hit
+**🎬 Render Video**, which shows a live progress bar and, when done, an
+inline player plus an MP4 download button. Rendering blocks the app
+while it runs (this is a local, single-user tool, so that's fine — just
+don't close the tab), so for anything beyond a short/preview-quality
+clip, exporting a timeline script and rendering via the CLI in the
+background (below) is more practical than waiting in the browser.
+
+### From the command line (for full-length/production renders)
+
+A real multi-minute render is thousands of frames and can take minutes to
+hours — better suited to a background process than a browser tab. Write
+a Python timeline script (see `examples/video_ambient_delta_zoom.py`) and
+render it headlessly:
 
 ```bash
 pip install -e .   # ffmpeg must also be on PATH -- see below
@@ -185,6 +215,16 @@ to E4).
 manager), macOS (`brew install ffmpeg`), Windows (`winget install
 ffmpeg` or `choco install ffmpeg`, or download from
 [ffmpeg.org](https://ffmpeg.org/download.html) and add it to PATH).
+
+**Which forms transition well.** The built-in Eisenstein series (E4, E6,
+E8, E10, E14) and Delta are all level 1, so they share the same single
+cusp orbit and periodicity — morphing between them (e.g. Delta → E4 → E6)
+feels like the same underlying skeleton changing texture/density rather
+than a structural jump, and is the smoothest family to drift through
+continuously. Switching to a different level (e.g. an LMFDB import like
+`105.2.a.a`) is a bigger structural change — more cusp classes, different
+boundary rhythm — better suited to a deliberate "chapter break" than
+continuous drifting.
 
 ## Styles
 

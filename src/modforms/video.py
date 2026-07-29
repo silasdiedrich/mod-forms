@@ -234,9 +234,16 @@ def estimate_render_time(timeline, fps=30, width=1280, height=720, sample_frames
     return n_frames, per_frame, n_frames * per_frame
 
 
-def render_video(timeline, out_path, fps=30, width=1280, height=720, crf=18, preset="medium", progress=True):
+def render_video(
+    timeline, out_path, fps=30, width=1280, height=720, crf=18, preset="medium", progress=True, progress_callback=None
+):
     """Render ``timeline`` to an H.264 MP4 at ``out_path`` by piping raw
     RGB24 frames into ffmpeg (requires ``ffmpeg`` on PATH).
+
+    ``progress_callback``, if given, is called after every frame as
+    ``progress_callback(frames_done, total_frames)`` -- e.g. to drive a
+    ``st.progress`` bar in a UI, independent of the ``progress=True``
+    textual output (meant for a terminal).
     """
     n_frames = max(1, round(timeline.duration * fps))
     cmd = [
@@ -276,6 +283,8 @@ def render_video(timeline, out_path, fps=30, width=1280, height=720, crf=18, pre
         arr = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
         arr = np.flipud(arr)  # increasing y upward, matching the paper/PNG convention
         proc.stdin.write(arr.tobytes())
+        if progress_callback is not None:
+            progress_callback(i + 1, n_frames)
         if progress and (i % max(1, n_frames // 200) == 0 or i == n_frames - 1):
             elapsed = time.time() - t0
             rate = (i + 1) / elapsed if elapsed > 0 else 0
