@@ -368,3 +368,26 @@ def test_video_json_import_rejects_garbage():
     [b for b in at.main.button if b.label == "Load from JSON"][0].click().run(timeout=30)
     assert not at.exception
     assert len(at.main.error) == 1
+
+
+def test_video_30min_preset_loads_with_correct_duration_and_no_safety_warnings():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    preset_select = [s for s in at.main.selectbox if "30-min journey (Delta family)" in s.options][0]
+    preset_select.set_value("30-min journey (Delta family)").run(timeout=30)
+    [b for b in at.main.button if b.label == "Load preset"][0].click().run(timeout=60)
+    assert not at.exception
+
+    kfs = at.session_state["video_keyframes"]
+    assert len(kfs) == 14
+    assert kfs[0]["time"] == 0
+    assert kfs[-1]["time"] == 1800
+    assert any(kf["builtin_choice"].startswith("E4") for kf in kfs)
+    assert any(kf["builtin_choice"].startswith("E6") for kf in kfs)
+    assert any(kf["builtin_choice"].startswith("E8") for kf in kfs)
+
+    duration_caption = [c for c in at.main.caption if "Duration:" in c.value][0]
+    assert "1800.0s" in duration_caption.value
+    assert len(at.main.warning) == 0  # no zoom-too-deep safety warnings

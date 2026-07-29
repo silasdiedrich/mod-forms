@@ -138,12 +138,24 @@ clip, exporting a timeline script and rendering via the CLI in the
 background (below) is more practical than waiting in the browser.
 
 **Loading a timeline without typing it in**: the "Load a preset timeline"
-dropdown has a couple of ready-made sequences (including a verified
-"golden cusp zoom" — see below), or expand "Import / export timeline as
-JSON" to paste in any timeline as JSON (e.g. one shared by someone else,
-or your own saved from the same box, which also lets a timeline survive
-a page reload/browser restart, since the running app's own state
-otherwise doesn't persist across those).
+dropdown has a few ready-made sequences (a short "golden cusp zoom" demo,
+and a full "30-min journey" — see below), or expand "Import / export
+timeline as JSON" to paste in any timeline as JSON (e.g. one shared by
+someone else, or your own saved from the same box, which also lets a
+timeline survive a page reload/browser restart, since the running app's
+own state otherwise doesn't persist across those).
+
+**For a longer (e.g. half-hour) video**, the "30-min journey (Delta
+family)" preset is a full 14-keyframe, 1800-second structure: an
+establishing shot, an orbit to a rich boundary region, a dive into the
+golden-ratio zoom, a drift through the level-1 family (Delta → E4 → E6 →
+E8, panning to a different rich region with each), then a second
+golden-ratio dive before returning to the opening shot (loop-friendly).
+**Render time is the real constraint at this length** — check "⏱ Estimate
+render time" for this specific timeline on your own machine before
+committing to anything; it varies a lot by hardware, and going from
+Preview resolution to full HD can easily be a 30x-plus difference in
+total render time for a video this long.
 
 ### From the command line (for full-length/production renders)
 

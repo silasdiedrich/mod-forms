@@ -543,6 +543,39 @@ VIDEO_PRESETS = {
         _preset_keyframe(time=0.0, region="disk", center_x=0.0, center_y=0.0, scale=1.02, cmap_name="cividis"),
         _preset_keyframe(time=10.0, region="disk", center_x=0.0, center_y=0.85, scale=0.05, cmap_name="twilight"),
     ],
+    "30-min journey (Delta family)": [
+        # Act 1: establishing shot, then orbit to a rich boundary region on the disk.
+        _preset_keyframe(time=0, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(time=90, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(time=300, region="disk", center_x=0.44, center_y=0.762, scale=0.15, n_terms=600, cmap_name="twilight"),
+        # Act 2: cross into the halfplane and dive toward the golden-ratio point -- the first deep-zoom payoff.
+        _preset_keyframe(time=480, region="halfplane", center_x=0.618, center_y=0.3, scale=0.27, n_terms=600, cmap_name="viridis"),
+        _preset_keyframe(time=780, region="halfplane", center_x=0.618, center_y=0.015, scale=0.008, n_terms=600, cmap_name="plasma"),
+        # Act 3: surface, then drift through the level-1 family (Delta -> E4 -> E6 -> E8),
+        # panning to a different rich boundary region with each form.
+        _preset_keyframe(time=960, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(
+            time=1020, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis",
+            builtin_choice="E4 — Eisenstein, weight 4",
+        ),
+        _preset_keyframe(
+            time=1140, region="disk", center_x=0.3, center_y=0.3, scale=0.3, n_terms=600, cmap_name="inferno",
+            builtin_choice="E4 — Eisenstein, weight 4",
+        ),
+        _preset_keyframe(
+            time=1260, region="disk", center_x=-0.762, center_y=0.44, scale=0.15, n_terms=600, cmap_name="magma",
+            builtin_choice="E6 — Eisenstein, weight 6",
+        ),
+        _preset_keyframe(
+            time=1380, region="disk", center_x=0.44, center_y=-0.762, scale=0.15, n_terms=600, cmap_name="coolwarm",
+            builtin_choice="E8 — Eisenstein, weight 8",
+        ),
+        # Act 4: back to Delta, a second dive into the golden-ratio zoom, then surface for a loop-friendly ending.
+        _preset_keyframe(time=1440, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(time=1620, region="halfplane", center_x=0.618, center_y=0.3, scale=0.27, n_terms=600, cmap_name="twilight"),
+        _preset_keyframe(time=1740, region="halfplane", center_x=0.618, center_y=0.015, scale=0.008, n_terms=600, cmap_name="viridis"),
+        _preset_keyframe(time=1800, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+    ],
 }
 
 
