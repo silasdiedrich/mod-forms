@@ -103,7 +103,7 @@ st.caption(
 form = None
 
 with st.sidebar:
-    dark_mode = st.toggle("🌙 Night mode", value=False, help="Dark UI, and a black plot background instead of white.")
+    dark_mode = st.toggle("🌙 Night mode", value=False, help="Dark UI chrome. Plot background is set separately below.")
     if dark_mode:
         st.markdown(
             """
@@ -269,6 +269,21 @@ with st.sidebar:
         + (f" → padded to {final_shape[1]}×{final_shape[0]} px" if final_shape != content_shape else "")
     )
 
+    st.header("5. Background")
+    bg_choice = st.radio(
+        "Outside the disk (or masked region)",
+        ["White", "Black", "Custom"],
+        horizontal=True,
+        help="Fill color for points outside the Poincaré disk (disk region) or any aspect-ratio padding.",
+    )
+    if bg_choice == "White":
+        plot_background = (1.0, 1.0, 1.0)
+    elif bg_choice == "Black":
+        plot_background = (0.0, 0.0, 0.0)
+    else:
+        bg_hex = st.color_picker("Background color", "#000000")
+        plot_background = tuple(int(bg_hex[i : i + 2], 16) / 255 for i in (1, 3, 5))
+
     render_clicked = st.button("▶ Render", type="primary", width="stretch")
 
 # Fingerprint of everything that affects the rendered image, so we can tell
@@ -290,6 +305,7 @@ current_fingerprint = (
     tuple(sorted(fingerprint_style_kwargs.items())),
     res,
     target_ratio,
+    plot_background,
     dark_mode,
 )
 
@@ -305,7 +321,6 @@ if render_clicked:
                 shape=content_shape,
                 disk_extent=disk_extent,
             )
-            plot_background = (0.0, 0.0, 0.0) if dark_mode else (1.0, 1.0, 1.0)
             rgb = plotting.render(vals, style=style, background=plot_background, **style_kwargs)
             if target_ratio is not None:
                 rgb = plotting.pad_to_aspect(rgb, target_ratio, background=plot_background)

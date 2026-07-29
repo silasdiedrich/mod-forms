@@ -55,8 +55,12 @@ A few extras worth knowing about:
   from Built-in to Custom to pick your own 2-6 colors with color pickers
   and build a colormap by interpolating between them (optionally cyclic,
   which matters for phase-based styles).
-- **Night mode**: a dark UI plus a black plot background instead of
-  white, for the region outside the disk/box.
+- **Background**: independent of Night mode (which only affects the UI
+  chrome), a "Background" control sets what fills the region outside the
+  disk/box — White, Black, or a custom color picker — used for both the
+  disk mask and any aspect-ratio padding.
+- **Night mode**: a dark UI theme, so the app's own chrome doesn't clash
+  with a dark plot background.
 
 If you change a control after already rendering, a warning banner tells
 you the preview is stale until you click Render again.
