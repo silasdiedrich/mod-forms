@@ -1,9 +1,12 @@
 """High-level helpers tying together a grid, a form, a coloring style, and
-matplotlib output.
+PNG output.
 """
 
+import io
+
 import numpy as np
-import matplotlib.pyplot as plt
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from .grid import halfplane_grid, disk_grid, phi
 from .coloring import STYLES
@@ -98,15 +101,35 @@ def render(vals, style="phase-contour", background=(1.0, 1.0, 1.0), **style_kwar
     return np.clip(rgb, 0.0, 1.0)
 
 
-def save_png(rgb, path, dpi=150):
-    """Save an (rows, cols, 3) RGB array to ``path`` with no padding/axes."""
-    rows, cols = rgb.shape[:2]
-    fig = plt.figure(figsize=(cols / dpi, rows / dpi), dpi=dpi)
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.imshow(rgb, origin="lower")
-    ax.axis("off")
-    fig.savefig(path, dpi=dpi)
-    plt.close(fig)
+def _build_png_info(metadata):
+    if not metadata:
+        return None
+    info = PngInfo()
+    for key, value in metadata.items():
+        info.add_text(key, value, zip=len(value) > 1024)
+    return info
+
+
+def rgb_to_png_bytes(rgb, metadata=None):
+    """Encode an (rows, cols, 3) float RGB array (values in [0, 1]) as PNG
+    bytes, with ``origin="lower"`` (row 0 = bottom) to match the paper's
+    orientation, optionally embedding ``metadata`` (a dict of str -> str)
+    as PNG text chunks -- see :mod:`modforms.reproduce` for reading it
+    back and re-rendering from it.
+    """
+    arr = (np.clip(rgb, 0.0, 1.0) * 255).astype(np.uint8)
+    img = Image.fromarray(np.flipud(arr))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", pnginfo=_build_png_info(metadata))
+    return buf.getvalue()
+
+
+def save_png(rgb, path, metadata=None):
+    """Save an (rows, cols, 3) RGB array to ``path`` as a PNG, optionally
+    embedding ``metadata`` (see :func:`rgb_to_png_bytes`).
+    """
+    with open(path, "wb") as f:
+        f.write(rgb_to_png_bytes(rgb, metadata=metadata))
 
 
 def plot_form(
@@ -117,6 +140,7 @@ def plot_form(
     disk_extent=1.02,
     style="phase-contour",
     out=None,
+    metadata=None,
     **style_kwargs,
 ):
     """Convenience one-shot: evaluate ``form`` and render+save it.
@@ -126,5 +150,5 @@ def plot_form(
     vals = evaluate_on_region(form, region=region, box=box, shape=shape, disk_extent=disk_extent)
     rgb = render(vals, style=style, **style_kwargs)
     if out is not None:
-        save_png(rgb, out)
+        save_png(rgb, out, metadata=metadata)
     return rgb

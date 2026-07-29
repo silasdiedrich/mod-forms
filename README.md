@@ -66,6 +66,19 @@ A few extras worth knowing about:
   N=1` for Delta, or the LMFDB label for an imported form — followed by
   the domain (disk or halfplane box) and a plain-text line of the style,
   colormap, resolution, and background actually used for that render.
+- **Self-describing downloads**: every downloaded PNG (from the UI or
+  `modforms.cli plot`) embeds everything needed to reproduce it — the
+  exact Fourier coefficients (not just a label, so it doesn't depend on
+  the LMFDB later), region, style/colormap, resolution, and background —
+  as PNG metadata. Re-render one exactly with:
+
+  ```bash
+  python -m modforms.cli replot downloaded.png --out again.png
+  ```
+
+  (add `--shape ROWS COLS` to reproduce it at a different resolution).
+  The filename is also descriptive (e.g. `Delta_disk_phase-contour.png`)
+  rather than a generic `modform.png`.
 
 If you change a control after already rendering, a warning banner tells
 you the preview is stale until you click Render again.
@@ -74,6 +87,7 @@ you the preview is stale until you click Render again.
 
 ```bash
 python -m modforms.cli plot --form delta --region disk --style phase-contour --cmap cividis --out delta.png
+python -m modforms.cli replot delta.png --out delta_again.png   # reproduce it exactly from its own metadata
 ```
 
 ```python
@@ -199,7 +213,8 @@ src/modforms/
   plotting.py     evaluate_on_region / render / save_png / plot_form
   presets.py      the regions used in the paper's figures
   lmfdb.py        import/browse newforms from the LMFDB's API
-  cli.py          command-line interface
+  reproduce.py    PNG reproduce-metadata: build it, read it back, replot
+  cli.py          command-line interface (plot / search / replot)
 examples/
 tests/
 ```

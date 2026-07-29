@@ -14,6 +14,7 @@ from .qexpansion import QExpansion
 from .grid import halfplane_grid, disk_grid, phi
 from .plotting import evaluate_on_region, render, save_png, plot_form
 from . import lmfdb
+from . import reproduce
 
 __all__ = [
     "QExpansion",
@@ -25,6 +26,7 @@ __all__ = [
     "save_png",
     "plot_form",
     "lmfdb",
+    "reproduce",
 ]
 
 __version__ = "0.1.0"

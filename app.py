@@ -6,13 +6,11 @@ Run with:
     streamlit run app.py
 """
 
-import io
+import re
 
-import numpy as np
 import streamlit as st
-from PIL import Image
 
-from modforms import forms, lmfdb, plotting, presets
+from modforms import forms, lmfdb, plotting, presets, reproduce
 from modforms.coloring import STYLE_LABELS, STYLE_PARAMS, STYLES, custom_colormap
 from modforms.qexpansion import QExpansion
 
@@ -87,11 +85,13 @@ def cached_lmfdb_qexpansion(label, n_terms):
     return form.coeffs, form.start, form.weight, form.level, form.label
 
 
-def rgb_to_png_bytes(rgb):
-    img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+def build_output_filename(form, source_kind, region, style):
+    symbol = {"delta": "Delta", "lmfdb": getattr(form, "label", None)}.get(source_kind)
+    if symbol is None and source_kind == "eisenstein":
+        symbol = f"E{int(form.weight)}" if getattr(form, "weight", None) else "E"
+    symbol = symbol or "form"
+    safe_symbol = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(symbol)).strip("_") or "form"
+    return f"{safe_symbol}_{region}_{style}.png"
 
 
 _LATEX_SPECIAL = {
@@ -413,8 +413,23 @@ if render_clicked:
             rgb = plotting.render(vals, style=style, background=plot_background, **style_kwargs)
             if target_ratio is not None:
                 rgb = plotting.pad_to_aspect(rgb, target_ratio, background=plot_background)
-            st.session_state["last_png"] = rgb_to_png_bytes(rgb)
             out_shape = rgb.shape[:2]
+
+            metadata = reproduce.build_metadata(
+                form,
+                source_kind,
+                region=region,
+                box=box,
+                disk_extent=disk_extent,
+                style=style,
+                style_kwargs_json=reproduce.style_kwargs_to_json(style_kwargs, cmap_fingerprint),
+                content_shape=content_shape,
+                output_shape=out_shape,
+                target_ratio=target_ratio,
+                background=plot_background,
+            )
+            st.session_state["last_png"] = plotting.rgb_to_png_bytes(rgb, metadata=metadata)
+            st.session_state["last_filename"] = build_output_filename(form, source_kind, region, style)
             st.session_state["last_form_latex"] = build_form_latex(form, source_kind)
             st.session_state["last_domain_latex"] = build_domain_latex(region, box, disk_extent)
             st.session_state["last_settings_caption"] = build_settings_caption(
@@ -433,6 +448,16 @@ if "last_png" in st.session_state:
         f'{st.session_state["last_settings_caption"]}</div>',
         unsafe_allow_html=True,
     )
-    st.download_button("Download PNG", st.session_state["last_png"], file_name="modform.png", mime="image/png")
+    st.download_button(
+        "Download PNG",
+        st.session_state["last_png"],
+        file_name=st.session_state.get("last_filename", "modform.png"),
+        mime="image/png",
+        help=(
+            "The PNG embeds everything needed to reproduce it (form, region, style, "
+            "resolution, background) as metadata -- run "
+            "`python -m modforms.cli replot <file> --out new.png` to re-render it exactly."
+        ),
+    )
 else:
     st.info("Configure a form in the sidebar and click **Render**.")

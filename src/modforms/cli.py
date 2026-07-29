@@ -3,11 +3,19 @@
     python -m modforms.cli plot --form delta --region disk --style phase-contour --out delta.png
     python -m modforms.cli plot --lmfdb 5.4.a.a --region disk --out g.png
     python -m modforms.cli search --level 105 --weight 2
+    python -m modforms.cli replot delta.png --out delta_again.png
+
+Every PNG written by ``plot`` (and by the Streamlit app) embeds a
+``modforms_reproduce`` metadata chunk describing exactly how to
+reproduce it (form, region, style, resolution, background, ...);
+``replot`` reads that back and re-renders from scratch, no need to
+remember or re-type any of the original settings.
 """
 
 import argparse
+import json
 
-from . import forms, lmfdb
+from . import forms, lmfdb, plotting, reproduce
 from .coloring import STYLES, STYLE_PARAMS
 from .plotting import plot_form
 from .qexpansion import QExpansion
@@ -61,6 +69,19 @@ def build_parser():
     search_p.add_argument("--weight", type=int)
     search_p.add_argument("--limit", type=int, default=20)
 
+    replot_p = sub.add_parser(
+        "replot", help="Re-render a PNG from its embedded modforms_reproduce metadata."
+    )
+    replot_p.add_argument("input", help="A PNG previously written by `plot` or the UI.")
+    replot_p.add_argument("--out", required=True, help="Output PNG path.")
+    replot_p.add_argument(
+        "--shape",
+        type=int,
+        nargs=2,
+        metavar=("ROWS", "COLS"),
+        help="Override the content resolution (defaults to what's stored in the metadata).",
+    )
+
     return p
 
 
@@ -72,9 +93,34 @@ def _load_form(args):
     return BUILTIN_FORMS[args.form](args.terms)
 
 
+def _source_kind(args):
+    if args.lmfdb:
+        return "lmfdb"
+    if args.csv:
+        return "csv"
+    return "delta" if args.form == "delta" else "eisenstein"
+
+
 def _run_plot(args):
     form = _load_form(args)
     style_kwargs = {p: getattr(args, p) for p in STYLE_PARAMS.get(args.style, [])}
+    box = args.box if args.region == "halfplane" else None
+    background = (1.0, 1.0, 1.0)
+
+    metadata = reproduce.build_metadata(
+        form,
+        _source_kind(args),
+        region=args.region,
+        box=box,
+        disk_extent=1.02,
+        style=args.style,
+        style_kwargs_json=reproduce.style_kwargs_to_json(style_kwargs, style_kwargs.get("cmap")),
+        content_shape=tuple(args.shape),
+        output_shape=tuple(args.shape),
+        target_ratio=None,
+        background=background,
+    )
+
     plot_form(
         form,
         region=args.region,
@@ -82,6 +128,8 @@ def _run_plot(args):
         shape=tuple(args.shape),
         style=args.style,
         out=args.out,
+        metadata=metadata,
+        background=background,
         **style_kwargs,
     )
     print(f"wrote {args.out}")
@@ -91,12 +139,43 @@ def _run_search(args):
     lmfdb.print_newforms(level=args.level, weight=args.weight, limit=args.limit)
 
 
+def _run_replot(args):
+    meta = reproduce.load_metadata(args.input)
+    form = reproduce.form_from_metadata(meta)
+    style_kwargs = reproduce.style_kwargs_from_metadata(meta)
+
+    shape = tuple(args.shape) if args.shape else tuple(meta["content_shape"])
+    box = (tuple(meta["box"][0]), tuple(meta["box"][1])) if meta.get("box") else ((-1, 1), (0, 2))
+    disk_extent = meta.get("disk_extent") or 1.02
+    background = tuple(meta["background"])
+
+    vals = plotting.evaluate_on_region(form, region=meta["region"], box=box, shape=shape, disk_extent=disk_extent)
+    rgb = plotting.render(vals, style=meta["style"], background=background, **style_kwargs)
+    target_ratio = meta.get("target_ratio")
+    if target_ratio:
+        rgb = plotting.pad_to_aspect(rgb, target_ratio, background=background)
+
+    # Re-embed the same recipe, with the shape fields updated to match this run.
+    new_meta = dict(meta)
+    new_meta["content_shape"] = list(shape)
+    new_meta["output_shape"] = list(rgb.shape[:2])
+    out_metadata = {
+        "Software": reproduce.SOFTWARE_TAG,
+        "Description": f"replotted from {args.input}",
+        reproduce.REPRODUCE_KEY: json.dumps(new_meta),
+    }
+    plotting.save_png(rgb, args.out, metadata=out_metadata)
+    print(f"wrote {args.out}")
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "plot":
         _run_plot(args)
     elif args.command == "search":
         _run_search(args)
+    elif args.command == "replot":
+        _run_replot(args)
 
 
 if __name__ == "__main__":

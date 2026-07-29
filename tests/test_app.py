@@ -174,3 +174,29 @@ def test_settings_caption_reflects_style_and_background():
     caption = at.session_state["last_settings_caption"]
     assert "background: black" in caption
     assert "200×200" in caption
+
+
+def test_downloaded_png_embeds_reproduce_metadata():
+    import io
+    import json
+
+    from PIL import Image
+
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    res_slider = [s for s in at.sidebar.slider if "Detail" in s.label][0]
+    res_slider.set_value(150).run(timeout=30)
+    render_button = [b for b in at.sidebar.button if "Render" in b.label][0]
+    render_button.click().run(timeout=60)
+    assert not at.exception
+
+    img = Image.open(io.BytesIO(at.session_state["last_png"]))
+    assert "modforms_reproduce" in img.text
+    meta = json.loads(img.text["modforms_reproduce"])
+    assert meta["form"]["label"] is not None
+    assert len(meta["form"]["coeffs"]) == 400
+    assert meta["content_shape"] == [150, 150]
+
+    # Filename is descriptive, not the old generic "modform.png".
+    assert at.session_state["last_filename"].endswith(".png")
+    assert at.session_state["last_filename"] != "modform.png"
