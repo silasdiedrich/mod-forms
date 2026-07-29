@@ -13,7 +13,7 @@ import streamlit as st
 from PIL import Image
 
 from modforms import forms, lmfdb, plotting, presets
-from modforms.coloring import STYLE_LABELS, STYLE_PARAMS, STYLES
+from modforms.coloring import STYLE_LABELS, STYLE_PARAMS, STYLES, custom_colormap
 from modforms.qexpansion import QExpansion
 
 st.set_page_config(page_title="mod-forms", page_icon="🌀", layout="wide")
@@ -48,6 +48,18 @@ BUILTIN_FORMS = {
 }
 
 CMAPS = ["cividis", "viridis", "twilight", "plasma", "inferno", "coolwarm", "Paired", "magma"]
+CUSTOM_CMAP_DEFAULT_COLORS = ["#000000", "#7b2ff7", "#f72585", "#ffbe0b"]
+
+ASPECT_RATIOS = {
+    "Native (undistorted)": None,
+    "Square 1:1": 1 / 1,
+    "4:3": 4 / 3,
+    "3:4 (portrait)": 3 / 4,
+    "16:9": 16 / 9,
+    "9:16 (portrait)": 9 / 16,
+    "21:9 (ultrawide)": 21 / 9,
+    "Custom": "custom",
+}
 
 HALFPLANE_PRESETS = {
     "Custom": None,
@@ -204,9 +216,27 @@ with st.sidebar:
     style = st.selectbox("Visualization style", list(STYLES), format_func=lambda k: STYLE_LABELS.get(k, k))
 
     style_kwargs = {}
+    cmap_fingerprint = None
     needed = STYLE_PARAMS.get(style, [])
     if "cmap" in needed:
-        style_kwargs["cmap"] = st.selectbox("Colormap", CMAPS)
+        cmap_source = st.radio("Colormap", ["Built-in", "Custom"], horizontal=True)
+        if cmap_source == "Built-in":
+            style_kwargs["cmap"] = st.selectbox("Choose colormap", CMAPS)
+            cmap_fingerprint = style_kwargs["cmap"]
+        else:
+            n_stops = st.slider("Number of colors", 2, 6, 3)
+            stop_cols = st.columns(n_stops)
+            stops = [
+                stop_cols[i].color_picker(
+                    f"#{i + 1}", CUSTOM_CMAP_DEFAULT_COLORS[i % len(CUSTOM_CMAP_DEFAULT_COLORS)]
+                )
+                for i in range(n_stops)
+            ]
+            cyclic = st.checkbox(
+                "Cyclic (wraps smoothly — good for phase-based styles)", value=True
+            )
+            style_kwargs["cmap"] = custom_colormap(stops, cyclic=cyclic)
+            cmap_fingerprint = ("custom", tuple(stops), cyclic)
     if "alpha" in needed:
         style_kwargs["alpha"] = st.slider("Alpha (magnitude curve)", 0.05, 1.0, 0.25, 0.05)
     if "base" in needed:
@@ -215,8 +245,8 @@ with st.sidebar:
     if "offset" in needed:
         style_kwargs["offset"] = st.slider("Hue offset", 0.0, 1.0, 0.0, 0.05)
 
-    st.header("4. Resolution")
-    res = st.slider("Grid size (rows = cols)", 128, 8192, 512, 64)
+    st.header("4. Resolution & Aspect Ratio")
+    res = st.slider("Detail (long edge of the plotted content, px)", 128, 8192, 512, 64)
     if res > 2048:
         st.caption(
             f"⚠️ {res}×{res} (~{res * res / 1e6:.0f}M points) will take a while — "
@@ -224,12 +254,32 @@ with st.sidebar:
             "several GB of RAM at the top end."
         )
 
+    aspect_choice = st.selectbox("Output aspect ratio", list(ASPECT_RATIOS))
+    target_ratio = ASPECT_RATIOS[aspect_choice]
+    if target_ratio == "custom":
+        rc1, rc2 = st.columns(2)
+        aw = rc1.number_input("Width", min_value=1, value=16, step=1)
+        ah = rc2.number_input("Height", min_value=1, value=9, step=1)
+        target_ratio = aw / ah
+
+    content_shape = (res, res) if region == "disk" else plotting.natural_shape(box or ((-1, 1), (0, 2)), res)
+    final_shape = plotting.padded_shape(content_shape, target_ratio) if target_ratio is not None else content_shape
+    st.caption(
+        f"Plotted content: {content_shape[1]}×{content_shape[0]} px"
+        + (f" → padded to {final_shape[1]}×{final_shape[0]} px" if final_shape != content_shape else "")
+    )
+
     render_clicked = st.button("▶ Render", type="primary", width="stretch")
 
 # Fingerprint of everything that affects the rendered image, so we can tell
 # the user when the on-screen preview no longer matches the current
 # controls (e.g. toggling Night mode doesn't retroactively repaint an
-# already-rendered image -- only the next Render does).
+# already-rendered image -- only the next Render does). Custom colormaps
+# use `cmap_fingerprint` here instead of the actual Colormap object, since
+# a fresh (but equal) object is rebuilt on every rerun.
+fingerprint_style_kwargs = dict(style_kwargs)
+if "cmap" in fingerprint_style_kwargs:
+    fingerprint_style_kwargs["cmap"] = cmap_fingerprint
 current_fingerprint = (
     getattr(form, "label", None),
     len(form.coeffs) if form is not None else None,
@@ -237,8 +287,9 @@ current_fingerprint = (
     box,
     disk_extent,
     style,
-    tuple(sorted(style_kwargs.items())),
+    tuple(sorted(fingerprint_style_kwargs.items())),
     res,
+    target_ratio,
     dark_mode,
 )
 
@@ -251,14 +302,19 @@ if render_clicked:
                 form,
                 region=region,
                 box=box or ((-1, 1), (0, 2)),
-                shape=(res, res),
+                shape=content_shape,
                 disk_extent=disk_extent,
             )
             plot_background = (0.0, 0.0, 0.0) if dark_mode else (1.0, 1.0, 1.0)
             rgb = plotting.render(vals, style=style, background=plot_background, **style_kwargs)
+            if target_ratio is not None:
+                rgb = plotting.pad_to_aspect(rgb, target_ratio, background=plot_background)
             st.session_state["last_png"] = rgb_to_png_bytes(rgb)
             label = getattr(form, "label", None) or "custom form"
-            st.session_state["last_caption"] = f"{label} — {STYLE_LABELS.get(style, style)}"
+            out_rows, out_cols = rgb.shape[:2]
+            st.session_state["last_caption"] = (
+                f"{label} — {STYLE_LABELS.get(style, style)} ({out_cols}×{out_rows})"
+            )
             st.session_state["last_render_fingerprint"] = current_fingerprint
 
 if "last_png" in st.session_state:

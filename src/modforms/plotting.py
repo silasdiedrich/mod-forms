@@ -30,6 +30,60 @@ def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(6
     raise ValueError(f"unknown region {region!r}, expected 'halfplane' or 'disk'")
 
 
+def natural_shape(box, max_dim=600):
+    """A (rows, cols) grid shape that keeps pixels square for a given
+    halfplane ``box``, with its longer side set to ``max_dim``.
+
+    Without this, a non-square box (e.g. the paper's f_105 box, which is
+    twice as wide as it is tall) rendered onto a square (res, res) grid
+    comes out visibly stretched, since each pixel no longer represents a
+    square region of the plane.
+    """
+    (x0, x1), (y0, y1) = box
+    width = abs(x1 - x0)
+    height = abs(y1 - y0)
+    if width <= 0 or height <= 0:
+        return max_dim, max_dim
+    if width >= height:
+        cols = max_dim
+        rows = max(1, round(max_dim * height / width))
+    else:
+        rows = max_dim
+        cols = max(1, round(max_dim * width / height))
+    return rows, cols
+
+
+def padded_shape(shape, target_ratio):
+    """The (rows, cols) an array of ``shape`` would become after
+    :func:`pad_to_aspect` with ``target_ratio`` (width / height), without
+    actually allocating/padding anything.
+    """
+    rows, cols = shape
+    current_ratio = cols / rows
+    if abs(current_ratio - target_ratio) < 1e-6:
+        return rows, cols
+    if current_ratio < target_ratio:
+        return rows, max(cols, round(rows * target_ratio))
+    return max(rows, round(cols / target_ratio)), cols
+
+
+def pad_to_aspect(rgb, target_ratio, background=(1.0, 1.0, 1.0)):
+    """Pad an (rows, cols, 3) RGB array with ``background`` so its
+    width/height matches ``target_ratio``, centering the existing content.
+    Only ever pads, never crops, so no content is lost.
+    """
+    rows, cols = rgb.shape[:2]
+    new_rows, new_cols = padded_shape((rows, cols), target_ratio)
+    if (new_rows, new_cols) == (rows, cols):
+        return rgb
+    canvas = np.empty((new_rows, new_cols, 3), dtype=rgb.dtype)
+    canvas[..., :] = background
+    row_off = (new_rows - rows) // 2
+    col_off = (new_cols - cols) // 2
+    canvas[row_off : row_off + rows, col_off : col_off + cols] = rgb
+    return canvas
+
+
 def render(vals, style="phase-contour", background=(1.0, 1.0, 1.0), **style_kwargs):
     """Apply a coloring style (see ``modforms.coloring.STYLES``) to
     evaluated form values, filling masked-out (NaN) points with

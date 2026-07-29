@@ -10,21 +10,49 @@ Section references are to Lowry-Duda, "Visualizing Modular Forms"
 """
 
 import numpy as np
-from matplotlib.colors import hsv_to_rgb
+from matplotlib.colors import LinearSegmentedColormap, hsv_to_rgb
 
 from .hsl import rgb_to_hsl, hsl_to_rgb
 
 try:  # matplotlib >= 3.5
     from matplotlib import colormaps as _mpl_colormaps
 
-    def _get_cmap(name):
+    def _lookup_cmap(name):
         return _mpl_colormaps[name]
 
 except ImportError:  # pragma: no cover - older matplotlib
     from matplotlib import cm as _mpl_cm
 
-    def _get_cmap(name):
+    def _lookup_cmap(name):
         return _mpl_cm.get_cmap(name)
+
+
+def _get_cmap(cmap):
+    """Resolve ``cmap`` to a matplotlib Colormap. Accepts either a
+    built-in colormap name, or an already-built Colormap object (e.g.
+    from :func:`custom_colormap`), which is returned as-is.
+    """
+    if isinstance(cmap, str):
+        return _lookup_cmap(cmap)
+    return cmap
+
+
+def custom_colormap(colors, cyclic=True, name="custom"):
+    """Build a matplotlib Colormap by interpolating between a list of
+    colors (anything matplotlib can parse: hex strings like "#ff8800",
+    (r, g, b) tuples in [0, 1], named colors, ...).
+
+    With ``cyclic=True`` (the default), the last color wraps smoothly back
+    to the first, which matters for phase-based styles here since phase is
+    itself cyclic (see the discussion of the ``twilight`` colormap in
+    Section 3.2 of the paper).
+    """
+    colors = list(colors)
+    if len(colors) < 2:
+        raise ValueError("need at least 2 colors to build a colormap")
+    if cyclic and colors[0] != colors[-1]:
+        colors = colors + [colors[0]]
+    return LinearSegmentedColormap.from_list(name, colors)
 
 
 def _phase01(f, offset=0.0, direction=1):

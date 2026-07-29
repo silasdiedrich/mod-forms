@@ -44,6 +44,23 @@ streamlit run app.py
 
 This opens in your browser at `http://localhost:8501`.
 
+A few extras worth knowing about:
+
+- **Resolution & aspect ratio**: the "Detail" slider controls the actual
+  plotted content's resolution (up to 8K); a separate "Output aspect
+  ratio" dropdown (Square, 4:3, 16:9, 21:9, custom W:H, ...) letterboxes
+  that content onto a canvas of the target shape using the current
+  background color, without stretching or cropping anything.
+- **Custom colormaps**: for any colormap-based style, switch "Colormap"
+  from Built-in to Custom to pick your own 2-6 colors with color pickers
+  and build a colormap by interpolating between them (optionally cyclic,
+  which matters for phase-based styles).
+- **Night mode**: a dark UI plus a black plot background instead of
+  white, for the region outside the disk/box.
+
+If you change a control after already rendering, a warning banner tells
+you the preview is stale until you click Render again.
+
 ## Quick start (CLI / scripting)
 
 ```bash

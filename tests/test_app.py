@@ -33,13 +33,54 @@ def test_colormap_style_reveals_extra_controls_and_renders():
     style_select = [s for s in at.sidebar.selectbox if s.label == "Visualization style"][0]
     style_select.set_value("colormap-phase-contour").run(timeout=30)
     assert not at.exception
-    assert any(s.label == "Colormap" for s in at.sidebar.selectbox)
+    assert any(r.label == "Colormap" for r in at.sidebar.radio)
+    assert any(s.label == "Choose colormap" for s in at.sidebar.selectbox)
 
     render_button = [b for b in at.sidebar.button if "Render" in b.label][0]
     render_button.click().run(timeout=60)
     assert not at.exception
     assert len(at.main.image) == 1
     assert len(at.main.download_button) == 1
+
+
+def test_custom_colormap_shows_color_pickers_and_renders():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    style_select = [s for s in at.sidebar.selectbox if s.label == "Visualization style"][0]
+    style_select.set_value("colormap-phase").run(timeout=30)
+
+    cmap_source_radio = [r for r in at.sidebar.radio if r.label == "Colormap"][0]
+    cmap_source_radio.set_value("Custom").run(timeout=30)
+    assert not at.exception
+    assert len(at.sidebar.color_picker) >= 2
+
+    render_button = [b for b in at.sidebar.button if "Render" in b.label][0]
+    render_button.click().run(timeout=60)
+    assert not at.exception
+    assert len(at.main.image) == 1
+
+
+def test_aspect_ratio_pads_output_to_target_ratio():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+
+    aspect_select = [s for s in at.sidebar.selectbox if s.label == "Output aspect ratio"][0]
+    aspect_select.set_value("16:9").run(timeout=30)
+
+    res_slider = [s for s in at.sidebar.slider if "Detail" in s.label][0]
+    res_slider.set_value(256).run(timeout=30)
+
+    render_button = [b for b in at.sidebar.button if "Render" in b.label][0]
+    render_button.click().run(timeout=60)
+    assert not at.exception
+
+    from io import BytesIO
+
+    from PIL import Image
+
+    img = Image.open(BytesIO(at.session_state["last_png"]))
+    width, height = img.size
+    assert abs(width / height - 16 / 9) < 0.02
 
 
 def test_csv_upload_renders():
