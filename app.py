@@ -6,6 +6,7 @@ Run with:
     streamlit run app.py
 """
 
+import json
 import re
 import shutil
 import tempfile
@@ -517,6 +518,51 @@ def _default_keyframe(next_id, **overrides):
     return kf
 
 
+def _preset_keyframe(**overrides):
+    """Like _default_keyframe, but with no id -- for VIDEO_PRESETS templates
+    (ids get assigned fresh when a preset is actually loaded).
+    """
+    kf = _default_keyframe(0, **overrides)
+    del kf["id"]
+    return kf
+
+
+# Ready-made timelines, selectable in the UI without typing anything in.
+VIDEO_PRESETS = {
+    "Golden cusp zoom (Delta)": [
+        _preset_keyframe(time=0.0, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(time=10.0, region="disk", center_x=0.0, center_y=0.0, scale=1.02, n_terms=600, cmap_name="cividis"),
+        _preset_keyframe(time=22.0, region="disk", center_x=0.44, center_y=0.762, scale=0.15, n_terms=600, cmap_name="twilight"),
+        _preset_keyframe(time=34.0, region="disk", center_x=-0.762, center_y=0.44, scale=0.15, n_terms=600, cmap_name="viridis"),
+        _preset_keyframe(time=48.0, region="halfplane", center_x=0.618, center_y=0.3, scale=0.27, n_terms=600, cmap_name="viridis"),
+        _preset_keyframe(time=60.0, region="halfplane", center_x=0.618, center_y=0.08, scale=0.07, n_terms=600, cmap_name="viridis"),
+        _preset_keyframe(time=74.0, region="halfplane", center_x=0.618, center_y=0.02, scale=0.018, n_terms=600, cmap_name="plasma"),
+        _preset_keyframe(time=90.0, region="halfplane", center_x=0.618, center_y=0.006, scale=0.005, n_terms=600, cmap_name="plasma"),
+    ],
+    "Simple cusp zoom (default)": [
+        _preset_keyframe(time=0.0, region="disk", center_x=0.0, center_y=0.0, scale=1.02, cmap_name="cividis"),
+        _preset_keyframe(time=10.0, region="disk", center_x=0.0, center_y=0.85, scale=0.05, cmap_name="twilight"),
+    ],
+}
+
+
+def _load_keyframes(keyframe_dicts):
+    """Replace the current timeline with (copies of, freshly re-ID'd)
+    ``keyframe_dicts`` -- used by both the preset picker and JSON import.
+    """
+    next_id = st.session_state["video_kf_next_id"]
+    loaded = []
+    for kf in keyframe_dicts:
+        merged = _default_keyframe(next_id)
+        merged.update(kf)
+        merged["id"] = next_id
+        merged["custom_stops"] = list(merged["custom_stops"])
+        next_id += 1
+        loaded.append(merged)
+    st.session_state["video_kf_next_id"] = next_id
+    st.session_state["video_keyframes"] = loaded
+
+
 def _ensure_video_state():
     if "video_keyframes" not in st.session_state:
         st.session_state["video_kf_next_id"] = 2
@@ -665,6 +711,31 @@ def render_video_mode():
         "crossfaded across the same span. Two adjacent keyframes with identical settings just "
         "hold that view for a while."
     )
+
+    load_cols = st.columns([3, 1])
+    preset_choice = load_cols[0].selectbox("Load a preset timeline", list(VIDEO_PRESETS), label_visibility="collapsed")
+    if load_cols[1].button("Load preset", width="stretch"):
+        _load_keyframes(VIDEO_PRESETS[preset_choice])
+        st.rerun()
+
+    with st.expander("Import / export timeline as JSON"):
+        st.caption("Paste a timeline (a JSON list of keyframe objects) someone gave you, or copy your own to save it.")
+        import_text = st.text_area("Paste timeline JSON here", height=120, key="video_import_json")
+        if st.button("Load from JSON"):
+            try:
+                loaded = json.loads(import_text)
+                if not isinstance(loaded, list) or not loaded:
+                    raise ValueError("expected a non-empty JSON list of keyframe objects")
+                _load_keyframes(loaded)
+                st.success(f"Loaded {len(loaded)} keyframes.")
+                st.rerun()
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                st.error(f"Couldn't load that as a timeline: {e}")
+
+        current_json = json.dumps(
+            [{k: v for k, v in kf.items() if k != "id"} for kf in st.session_state["video_keyframes"]], indent=2
+        )
+        st.text_area("Current timeline (copy this to save it)", value=current_json, height=120)
 
     ffmpeg_available = shutil.which("ffmpeg") is not None
     if not ffmpeg_available:

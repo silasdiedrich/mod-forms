@@ -137,6 +137,14 @@ don't close the tab), so for anything beyond a short/preview-quality
 clip, exporting a timeline script and rendering via the CLI in the
 background (below) is more practical than waiting in the browser.
 
+**Loading a timeline without typing it in**: the "Load a preset timeline"
+dropdown has a couple of ready-made sequences (including a verified
+"golden cusp zoom" — see below), or expand "Import / export timeline as
+JSON" to paste in any timeline as JSON (e.g. one shared by someone else,
+or your own saved from the same box, which also lets a timeline survive
+a page reload/browser restart, since the running app's own state
+otherwise doesn't persist across those).
+
 ### From the command line (for full-length/production renders)
 
 A real multi-minute render is thousands of frames and can take minutes to
@@ -201,15 +209,24 @@ precision and how many Fourier terms you evaluated with) truncation
 artifacts appear instead of finer structure. `Timeline.check_safety()`
 (also run automatically by the `video` CLI command) gives a rough,
 non-blocking warning when a keyframe's zoom looks too deep for its term
-count. This still covers a solid zoom range — and cuspforms (like Delta)
-genuinely do show self-similar, nested structure as you approach a cusp,
-since the modular group tiles the disk's boundary with ever-smaller
-copies of the fundamental domain there. Note that **only cuspforms get
-richer near cusps** — Eisenstein series approach a nonzero constant at
-cusps instead of vanishing, so they go flat/boring there; look for their
-interesting structure at their actual zeros instead (see the comment in
-the example script, which hits exactly this when it switches from Delta
-to E4).
+count.
+
+**Pick an irrational zoom target for sustained detail.** Zooming toward a
+specific *rational* boundary point (an actual single cusp) eventually
+zooms *inside* that cusp's own horoball, where the form is smooth and the
+image goes flat/boring — verified by rendering it. Zooming toward an
+*irrational* point instead keeps encountering infinitely many nearby
+smaller cusps (a rational's denominator can always be improved), so
+detail keeps appearing at every scale — the disk boundary's Ford-circle
+tiling made visible. The golden ratio, `(sqrt(5) - 1) / 2 ≈ 0.618`, is
+the standard choice for this (its continued fraction `[0; 1, 1, 1, ...]`
+converges slowest, giving the most uniform, persistent nesting) — used as
+the target in the "Golden cusp zoom" UI preset. In the halfplane model
+this is just `center=(0.618, y)` with `y` shrinking toward 0; cuspforms (like
+Delta) are what show this richness at all — Eisenstein series approach a
+nonzero constant at cusps instead of vanishing, so they go flat/boring
+near any boundary point regardless; look for their interesting structure
+at their actual zeros instead.
 
 **Installing ffmpeg**: Linux (`apt install ffmpeg` / your package
 manager), macOS (`brew install ffmpeg`), Windows (`winget install

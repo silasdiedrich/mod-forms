@@ -209,14 +209,19 @@ def test_downloaded_png_embeds_reproduce_metadata():
     assert at.session_state["last_filename"] != "modform.png"
 
 
+def _keyframe_expanders(at):
+    return [e for e in at.main.expander if e.label.startswith("Keyframe")]
+
+
 def test_video_mode_loads_with_default_keyframes():
     at = st_testing.AppTest.from_file(APP_PATH)
     at.run(timeout=30)
     _switch_to_video_mode(at)
     assert not at.exception
-    assert len(at.main.expander) == 2
-    assert at.main.expander[0].label.startswith("Keyframe 1")
-    assert at.main.expander[1].label.startswith("Keyframe 2")
+    kf_expanders = _keyframe_expanders(at)
+    assert len(kf_expanders) == 2
+    assert kf_expanders[0].label.startswith("Keyframe 1")
+    assert kf_expanders[1].label.startswith("Keyframe 2")
 
 
 def test_video_add_and_remove_keyframe():
@@ -227,13 +232,13 @@ def test_video_add_and_remove_keyframe():
     add_button = [b for b in at.main.button if "Add keyframe" in b.label][0]
     add_button.click().run(timeout=30)
     assert not at.exception
-    assert len(at.main.expander) == 3
+    assert len(_keyframe_expanders(at)) == 3
 
     remove_buttons = [b for b in at.main.button if "Remove this keyframe" in b.label]
     assert len(remove_buttons) == 3
     remove_buttons[0].click().run(timeout=30)
     assert not at.exception
-    assert len(at.main.expander) == 2
+    assert len(_keyframe_expanders(at)) == 2
 
 
 def test_video_keyframe_style_change_is_scoped_to_that_keyframe():
@@ -307,3 +312,59 @@ def test_video_full_render_produces_playable_mp4():
     assert "video_bytes" in at.session_state
     assert len(at.session_state["video_bytes"]) > 0
     assert len(at.main.error) == 0
+
+
+def test_video_load_preset_replaces_timeline():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    preset_select = [s for s in at.main.selectbox if "Golden cusp zoom (Delta)" in s.options][0]
+    preset_select.set_value("Golden cusp zoom (Delta)").run(timeout=30)
+    load_button = [b for b in at.main.button if b.label == "Load preset"][0]
+    load_button.click().run(timeout=30)
+    assert not at.exception
+
+    kfs = at.session_state["video_keyframes"]
+    assert len(kfs) == 8
+    assert kfs[0]["region"] == "disk" and kfs[0]["scale"] == 1.02
+    assert kfs[-1]["region"] == "halfplane" and kfs[-1]["center_x"] == 0.618
+    assert len(_keyframe_expanders(at)) == 8
+
+
+def test_video_json_export_then_import_round_trips():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    preset_select = [s for s in at.main.selectbox if "Golden cusp zoom (Delta)" in s.options][0]
+    preset_select.set_value("Golden cusp zoom (Delta)").run(timeout=30)
+    [b for b in at.main.button if b.label == "Load preset"][0].click().run(timeout=30)
+
+    exported = [t for t in at.main.text_area if "Current timeline" in t.label][0].value
+
+    at2 = st_testing.AppTest.from_file(APP_PATH)
+    at2.run(timeout=30)
+    _switch_to_video_mode(at2)
+    import_area = [t for t in at2.main.text_area if "Paste timeline JSON" in t.label][0]
+    import_area.set_value(exported).run(timeout=30)
+    [b for b in at2.main.button if b.label == "Load from JSON"][0].click().run(timeout=30)
+    assert not at2.exception
+
+    original = at.session_state["video_keyframes"]
+    roundtripped = at2.session_state["video_keyframes"]
+    assert len(roundtripped) == len(original)
+    for a, b in zip(original, roundtripped):
+        assert {k: v for k, v in a.items() if k != "id"} == {k: v for k, v in b.items() if k != "id"}
+
+
+def test_video_json_import_rejects_garbage():
+    at = st_testing.AppTest.from_file(APP_PATH)
+    at.run(timeout=30)
+    _switch_to_video_mode(at)
+
+    import_area = [t for t in at.main.text_area if "Paste timeline JSON" in t.label][0]
+    import_area.set_value("not valid json").run(timeout=30)
+    [b for b in at.main.button if b.label == "Load from JSON"][0].click().run(timeout=30)
+    assert not at.exception
+    assert len(at.main.error) == 1
