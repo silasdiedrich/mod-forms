@@ -123,6 +123,43 @@ def test_video_renders_mp4(tmp_path):
     assert out.exists() and out.stat().st_size > 0
 
 
+def test_video_preview_uses_low_res_defaults(tmp_path, capsys):
+    timeline_path = tmp_path / "timeline.py"
+    _write_tiny_timeline(timeline_path)
+    out = tmp_path / "out.mp4"
+
+    main(["video", str(timeline_path), "--out", str(out), "--preview", "--dry-run"])
+
+    output = capsys.readouterr().out
+    assert "[preview]" in output
+    assert "480x270" in output
+    assert "15fps" in output
+
+
+def test_video_preview_allows_individual_overrides(tmp_path, capsys):
+    timeline_path = tmp_path / "timeline.py"
+    _write_tiny_timeline(timeline_path)
+    out = tmp_path / "out.mp4"
+
+    main(["video", str(timeline_path), "--out", str(out), "--preview", "--width", "640", "--dry-run"])
+
+    output = capsys.readouterr().out
+    assert "640x270" in output  # width overridden, height/fps still preview defaults
+
+
+def test_video_without_preview_uses_full_defaults(tmp_path, capsys):
+    timeline_path = tmp_path / "timeline.py"
+    _write_tiny_timeline(timeline_path)
+    out = tmp_path / "out.mp4"
+
+    main(["video", str(timeline_path), "--out", str(out), "--dry-run"])
+
+    output = capsys.readouterr().out
+    assert "[full]" in output
+    assert "1280x720" in output
+    assert "30fps" in output
+
+
 def test_video_timeline_without_TIMELINE_or_build_timeline_raises(tmp_path):
     timeline_path = tmp_path / "bad_timeline.py"
     timeline_path.write_text("x = 1\n")

@@ -96,11 +96,22 @@ def build_parser():
         "timeline", help="Python file defining TIMELINE (a list of Keyframe, or a Timeline) or build_timeline()."
     )
     video_p.add_argument("--out", required=True, help="Output MP4 path.")
-    video_p.add_argument("--fps", type=int, default=30)
-    video_p.add_argument("--width", type=int, default=1280)
-    video_p.add_argument("--height", type=int, default=720)
+    video_p.add_argument(
+        "--preview",
+        action="store_true",
+        help=(
+            "Quick low-res/low-fps draft (480x270 @ 15fps, fastest x264 preset) to check the "
+            "composition before committing to a full render. --fps/--width/--height/--preset "
+            "still override individually if given."
+        ),
+    )
+    video_p.add_argument("--fps", type=int, default=None, help="Default: 30, or 15 with --preview.")
+    video_p.add_argument("--width", type=int, default=None, help="Default: 1280, or 480 with --preview.")
+    video_p.add_argument("--height", type=int, default=None, help="Default: 720, or 270 with --preview.")
     video_p.add_argument("--crf", type=int, default=18, help="x264 quality; lower = higher quality/bigger file.")
-    video_p.add_argument("--preset", default="medium", help="x264 encoding speed/efficiency preset.")
+    video_p.add_argument(
+        "--preset", default=None, help="x264 encoding speed/efficiency preset. Default: medium, or ultrafast with --preview."
+    )
     video_p.add_argument(
         "--dry-run", action="store_true", help="Print the frame count and a time estimate, then exit."
     )
@@ -206,17 +217,29 @@ def _load_timeline(path):
     return timeline
 
 
+_VIDEO_DEFAULTS = {"fps": 30, "width": 1280, "height": 720, "preset": "medium"}
+_VIDEO_PREVIEW_DEFAULTS = {"fps": 15, "width": 480, "height": 270, "preset": "ultrafast"}
+
+
+def _resolve_video_settings(args):
+    defaults = _VIDEO_PREVIEW_DEFAULTS if args.preview else _VIDEO_DEFAULTS
+    return {name: getattr(args, name) if getattr(args, name) is not None else default for name, default in defaults.items()}
+
+
 def _run_video(args):
     timeline = _load_timeline(args.timeline)
+    settings = _resolve_video_settings(args)
 
     for warning in timeline.check_safety():
         print(f"warning: {warning}")
 
     n_frames, per_frame, total_est = video.estimate_render_time(
-        timeline, fps=args.fps, width=args.width, height=args.height
+        timeline, fps=settings["fps"], width=settings["width"], height=settings["height"]
     )
+    mode = "preview" if args.preview else "full"
     print(
-        f"{n_frames} frames at {args.fps}fps ({timeline.duration:.1f}s of video), "
+        f"[{mode}] {settings['width']}x{settings['height']} @ {settings['fps']}fps -- "
+        f"{n_frames} frames ({timeline.duration:.1f}s of video), "
         f"~{per_frame * 1000:.0f}ms/frame, estimated total: {total_est / 60:.1f} min"
     )
     if args.dry_run:
@@ -225,11 +248,11 @@ def _run_video(args):
     video.render_video(
         timeline,
         args.out,
-        fps=args.fps,
-        width=args.width,
-        height=args.height,
+        fps=settings["fps"],
+        width=settings["width"],
+        height=settings["height"],
         crf=args.crf,
-        preset=args.preset,
+        preset=settings["preset"],
     )
     print(f"wrote {args.out}")
 

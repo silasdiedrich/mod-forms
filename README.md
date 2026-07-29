@@ -116,9 +116,17 @@ synchronous web request the way the image UI does.
 
 ```bash
 pip install -e .   # ffmpeg must also be on PATH -- see below
-python -m modforms.cli video examples/video_ambient_delta_zoom.py --out preview.mp4 --dry-run
+python -m modforms.cli video examples/video_ambient_delta_zoom.py --out preview.mp4 --preview
 python -m modforms.cli video examples/video_ambient_delta_zoom.py --out video.mp4 --width 1920 --height 1080 --fps 30
 ```
+
+`--preview` is a one-flag shortcut for a fast, low-res draft (480×270 @
+15fps, fastest x264 preset) — same full timeline duration, just cheap to
+render, so you can check the composition/timing before committing to a
+full-resolution render. Individual flags (`--width`, `--fps`, ...) still
+override just that setting if you want, e.g. `--preview --width 640` for
+a slightly bigger draft. Add `--dry-run` on top of either to just print
+the frame count and a time estimate without rendering anything.
 
 A timeline is a Python file exporting `TIMELINE` (a list of `Keyframe`, or
 a `Timeline`) — see `examples/video_ambient_delta_zoom.py` for a complete,
@@ -151,8 +159,9 @@ bottleneck is the Python/NumPy evaluation of the form, not video
 encoding, so resolution matters a lot: expect on the order of a second
 per 720p frame with the contour styles, meaning a 30fps minute of 720p
 video is roughly a half hour to render (varies a lot by machine and
-style). Render a low-res draft first (`--width 640 --height 360`) to
-check the composition, then commit to a full-resolution overnight/
+style). Render a `--preview` draft first to check the composition and
+timing (a few seconds to a couple of minutes, depending on length), then
+commit to a full-resolution overnight/
 background render for the real thing.
 
 **Zoom depth is not literally infinite.** Unlike Mandelbrot's escape-time
