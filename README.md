@@ -105,6 +105,78 @@ plotting.plot_form(
 Run `python examples/reproduce_delta_gallery.py` to regenerate a full
 gallery (all styles, disk + halfplane) into `output/`.
 
+## Video mode: ambient zoom videos
+
+`modforms.video` renders continuous "infinite zoom" style videos —
+zooming toward a cusp while crossfading between colormaps and even
+switching forms mid-zoom — in the style of ambient fractal-zoom videos on
+YouTube. This is a scripting tool, not a UI button: a real render is
+thousands of frames and can take minutes to hours, which doesn't fit a
+synchronous web request the way the image UI does.
+
+```bash
+pip install -e .   # ffmpeg must also be on PATH -- see below
+python -m modforms.cli video examples/video_ambient_delta_zoom.py --out preview.mp4 --dry-run
+python -m modforms.cli video examples/video_ambient_delta_zoom.py --out video.mp4 --width 1920 --height 1080 --fps 30
+```
+
+A timeline is a Python file exporting `TIMELINE` (a list of `Keyframe`, or
+a `Timeline`) — see `examples/video_ambient_delta_zoom.py` for a complete,
+working one. Each keyframe sets a time, a form, a view (`center`/`scale`
+in the disk's or halfplane's own coordinates — no aspect-ratio padding
+here, frames are always full-bleed), a style, and colormap. Between two
+consecutive keyframes the view zooms geometrically (constant *perceived*
+zoom speed, exactly like a Mandelbrot zoom) with eased (smootherstep)
+pacing; if the two keyframes differ in form/style/colormap, their renders
+crossfade across the same span too. A "held" shot is just two adjacent
+keyframes with identical parameters.
+
+```python
+from modforms.video import Keyframe, builtin_cmap
+
+DELTA = {"source": "delta", "n_terms": 400}
+
+TIMELINE = [
+    Keyframe(time=0.0, form=DELTA, region="disk", center=(0, 0), scale=1.02,
+             style="colormap-phase-contour", style_kwargs={"base": 2.0, "cmap": builtin_cmap("cividis")}),
+    Keyframe(time=20.0, form=DELTA, region="disk", center=(0.05, 0.85), scale=0.01,
+             style="colormap-phase-contour", style_kwargs={"base": 2.0, "cmap": builtin_cmap("twilight")}),
+]
+```
+
+**Before committing to a long render**, always check `--dry-run` first —
+it prints the frame count and a time estimate from a few sample frames,
+so you're not guessing at how long a render will actually take. The
+bottleneck is the Python/NumPy evaluation of the form, not video
+encoding, so resolution matters a lot: expect on the order of a second
+per 720p frame with the contour styles, meaning a 30fps minute of 720p
+video is roughly a half hour to render (varies a lot by machine and
+style). Render a low-res draft first (`--width 640 --height 360`) to
+check the composition, then commit to a full-resolution overnight/
+background render for the real thing.
+
+**Zoom depth is not literally infinite.** Unlike Mandelbrot's escape-time
+iteration, a modular form's truncated q-expansion doesn't generate
+open-ended new detail forever — past a point (governed by float64
+precision and how many Fourier terms you evaluated with) truncation
+artifacts appear instead of finer structure. `Timeline.check_safety()`
+(also run automatically by the `video` CLI command) gives a rough,
+non-blocking warning when a keyframe's zoom looks too deep for its term
+count. This still covers a solid zoom range — and cuspforms (like Delta)
+genuinely do show self-similar, nested structure as you approach a cusp,
+since the modular group tiles the disk's boundary with ever-smaller
+copies of the fundamental domain there. Note that **only cuspforms get
+richer near cusps** — Eisenstein series approach a nonzero constant at
+cusps instead of vanishing, so they go flat/boring there; look for their
+interesting structure at their actual zeros instead (see the comment in
+the example script, which hits exactly this when it switches from Delta
+to E4).
+
+**Installing ffmpeg**: Linux (`apt install ffmpeg` / your package
+manager), macOS (`brew install ffmpeg`), Windows (`winget install
+ffmpeg` or `choco install ffmpeg`, or download from
+[ffmpeg.org](https://ffmpeg.org/download.html) and add it to PATH).
+
 ## Styles
 
 Each corresponds to a subsection of the paper:
@@ -214,8 +286,10 @@ src/modforms/
   presets.py      the regions used in the paper's figures
   lmfdb.py        import/browse newforms from the LMFDB's API
   reproduce.py    PNG reproduce-metadata: build it, read it back, replot
-  cli.py          command-line interface (plot / search / replot)
+  video.py        ambient zoom video timelines (Keyframe, Timeline, render_video)
+  cli.py          command-line interface (plot / search / replot / video)
 examples/
+  video_ambient_delta_zoom.py   a complete, working video timeline
 tests/
 ```
 

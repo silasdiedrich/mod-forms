@@ -1,13 +1,19 @@
 """End-to-end tests for the CLI, focused on the plot -> replot round trip
-that backs the "download carries everything needed to reproduce it" story.
+that backs the "download carries everything needed to reproduce it" story,
+plus the video subcommand.
 """
 
 import json
+import shutil
+import textwrap
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from modforms.cli import main
+
+HAVE_FFMPEG = shutil.which("ffmpeg") is not None
 
 
 def test_plot_embeds_metadata(tmp_path):
@@ -74,3 +80,53 @@ def test_replot_on_non_modforms_png_raises_clear_error(tmp_path):
         assert False, "expected an error for a PNG with no modforms_reproduce metadata"
     except ValueError as e:
         assert "modforms_reproduce" in str(e)
+
+
+def _write_tiny_timeline(path):
+    path.write_text(
+        textwrap.dedent(
+            """
+            from modforms.video import Keyframe
+
+            DELTA = {"source": "delta", "n_terms": 20}
+
+            TIMELINE = [
+                Keyframe(time=0.0, form=DELTA, region="disk", scale=1.02),
+                Keyframe(time=0.5, form=DELTA, region="disk", scale=0.5),
+            ]
+            """
+        )
+    )
+
+
+def test_video_dry_run_prints_estimate_without_rendering(tmp_path, capsys):
+    timeline_path = tmp_path / "timeline.py"
+    _write_tiny_timeline(timeline_path)
+    out = tmp_path / "out.mp4"
+
+    main(["video", str(timeline_path), "--out", str(out), "--dry-run", "--fps", "4", "--width", "20", "--height", "20"])
+
+    captured = capsys.readouterr()
+    assert "frames" in captured.out
+    assert "estimated total" in captured.out
+    assert not out.exists()
+
+
+@pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg not installed")
+def test_video_renders_mp4(tmp_path):
+    timeline_path = tmp_path / "timeline.py"
+    _write_tiny_timeline(timeline_path)
+    out = tmp_path / "out.mp4"
+
+    main(["video", str(timeline_path), "--out", str(out), "--fps", "4", "--width", "24", "--height", "24"])
+
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_video_timeline_without_TIMELINE_or_build_timeline_raises(tmp_path):
+    timeline_path = tmp_path / "bad_timeline.py"
+    timeline_path.write_text("x = 1\n")
+    out = tmp_path / "out.mp4"
+
+    with pytest.raises(ValueError, match="TIMELINE"):
+        main(["video", str(timeline_path), "--out", str(out), "--dry-run"])

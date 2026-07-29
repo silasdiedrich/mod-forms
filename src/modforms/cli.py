@@ -4,18 +4,25 @@
     python -m modforms.cli plot --lmfdb 5.4.a.a --region disk --out g.png
     python -m modforms.cli search --level 105 --weight 2
     python -m modforms.cli replot delta.png --out delta_again.png
+    python -m modforms.cli video my_timeline.py --out video.mp4
 
 Every PNG written by ``plot`` (and by the Streamlit app) embeds a
 ``modforms_reproduce`` metadata chunk describing exactly how to
 reproduce it (form, region, style, resolution, background, ...);
 ``replot`` reads that back and re-renders from scratch, no need to
 remember or re-type any of the original settings.
+
+``video`` renders an ambient zoom video (see modforms.video and
+examples/video_ambient_delta_zoom.py) from a Python script defining a
+TIMELINE (a list of Keyframe, or a Timeline) or a build_timeline()
+function.
 """
 
 import argparse
+import importlib.util
 import json
 
-from . import forms, lmfdb, plotting, reproduce
+from . import forms, lmfdb, plotting, reproduce, video
 from .coloring import STYLES, STYLE_PARAMS
 from .plotting import plot_form
 from .qexpansion import QExpansion
@@ -80,6 +87,22 @@ def build_parser():
         nargs=2,
         metavar=("ROWS", "COLS"),
         help="Override the content resolution (defaults to what's stored in the metadata).",
+    )
+
+    video_p = sub.add_parser(
+        "video", help="Render an ambient zoom video from a Python timeline script (requires ffmpeg)."
+    )
+    video_p.add_argument(
+        "timeline", help="Python file defining TIMELINE (a list of Keyframe, or a Timeline) or build_timeline()."
+    )
+    video_p.add_argument("--out", required=True, help="Output MP4 path.")
+    video_p.add_argument("--fps", type=int, default=30)
+    video_p.add_argument("--width", type=int, default=1280)
+    video_p.add_argument("--height", type=int, default=720)
+    video_p.add_argument("--crf", type=int, default=18, help="x264 quality; lower = higher quality/bigger file.")
+    video_p.add_argument("--preset", default="medium", help="x264 encoding speed/efficiency preset.")
+    video_p.add_argument(
+        "--dry-run", action="store_true", help="Print the frame count and a time estimate, then exit."
     )
 
     return p
@@ -168,6 +191,49 @@ def _run_replot(args):
     print(f"wrote {args.out}")
 
 
+def _load_timeline(path):
+    spec = importlib.util.spec_from_file_location("modforms_timeline", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if hasattr(module, "TIMELINE"):
+        timeline = module.TIMELINE
+    elif hasattr(module, "build_timeline"):
+        timeline = module.build_timeline()
+    else:
+        raise ValueError(f"{path} must define a TIMELINE (list of Keyframe, or a Timeline) or a build_timeline()")
+    if isinstance(timeline, list):
+        timeline = video.Timeline(timeline)
+    return timeline
+
+
+def _run_video(args):
+    timeline = _load_timeline(args.timeline)
+
+    for warning in timeline.check_safety():
+        print(f"warning: {warning}")
+
+    n_frames, per_frame, total_est = video.estimate_render_time(
+        timeline, fps=args.fps, width=args.width, height=args.height
+    )
+    print(
+        f"{n_frames} frames at {args.fps}fps ({timeline.duration:.1f}s of video), "
+        f"~{per_frame * 1000:.0f}ms/frame, estimated total: {total_est / 60:.1f} min"
+    )
+    if args.dry_run:
+        return
+
+    video.render_video(
+        timeline,
+        args.out,
+        fps=args.fps,
+        width=args.width,
+        height=args.height,
+        crf=args.crf,
+        preset=args.preset,
+    )
+    print(f"wrote {args.out}")
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.command == "plot":
@@ -176,6 +242,8 @@ def main(argv=None):
         _run_search(args)
     elif args.command == "replot":
         _run_replot(args)
+    elif args.command == "video":
+        _run_video(args)
 
 
 if __name__ == "__main__":

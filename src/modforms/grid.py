@@ -29,14 +29,25 @@ def phi(w):
     return (1 - 1j * w) / (w - 1j)
 
 
-def disk_grid(shape, extent=1.02):
-    """Return (W, mask): a complex grid over the square [-extent, extent]^2
-    and a boolean mask that is True inside the open unit disk.
+def disk_grid_box(box, shape):
+    """Like :func:`disk_grid`, but over an arbitrary ``((x0, x1), (y0, y1))``
+    box in w-space instead of a fixed origin-centered square -- used to zoom
+    toward an arbitrary point in (or near the boundary of) the disk, e.g.
+    for :mod:`modforms.video`. The unit-disk mask still applies wherever the
+    box happens to fall relative to |w| = 1.
     """
+    (x0, x1), (y0, y1) = box
     rows, cols = shape
-    xs = np.linspace(-extent, extent, cols)
-    ys = np.linspace(-extent, extent, rows)
+    xs = np.linspace(x0, x1, cols)
+    ys = np.linspace(y0, y1, rows)
     X, Y = np.meshgrid(xs, ys)
     W = X + 1j * Y
     mask = (X**2 + Y**2) < 1.0
     return W, mask
+
+
+def disk_grid(shape, extent=1.02):
+    """Return (W, mask): a complex grid over the square [-extent, extent]^2
+    and a boolean mask that is True inside the open unit disk.
+    """
+    return disk_grid_box(((-extent, extent), (-extent, extent)), shape)

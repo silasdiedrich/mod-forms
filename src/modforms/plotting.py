@@ -8,20 +8,28 @@ import numpy as np
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-from .grid import halfplane_grid, disk_grid, phi
+from .grid import halfplane_grid, disk_grid, disk_grid_box, phi
 from .coloring import STYLES
 
 
-def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(600, 600), disk_extent=1.02):
+def evaluate_on_region(form, region="halfplane", box=((-1, 1), (0, 2)), shape=(600, 600), disk_extent=1.02, disk_box=None):
     """Evaluate ``form`` on a grid over either the halfplane box or the
     Poincare disk. Points outside the disk are set to NaN (Section 3.1,
     step 2's masking).
+
+    ``disk_box`` optionally overrides the origin-centered ``disk_extent``
+    square with an arbitrary ``((x0, x1), (y0, y1))`` box in w-space, for
+    zooming toward a point away from the disk's center (see
+    :mod:`modforms.video`).
     """
     if region == "halfplane":
         z = halfplane_grid(box, shape)
         return form(z)
     if region == "disk":
-        w, mask = disk_grid(shape, extent=disk_extent)
+        if disk_box is not None:
+            w, mask = disk_grid_box(disk_box, shape)
+        else:
+            w, mask = disk_grid(shape, extent=disk_extent)
         z = phi(w)
         # Points outside the disk can map to extreme values of z (even the
         # lower halfplane), which would otherwise overflow the q-expansion;
