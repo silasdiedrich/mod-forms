@@ -46,6 +46,7 @@ def test_fetch_qexpansion_unnormalizes_real_schema(monkeypatch):
             {
                 "label": "105.2.a.a.1.1",
                 "weight": 2,
+                "level": 105,
                 "an_normalized": [
                     [1.0, 0.0],
                     [0.7071067811865476, 0.0],
@@ -67,6 +68,7 @@ def test_fetch_qexpansion_unnormalizes_real_schema(monkeypatch):
     form = lmfdb.fetch_qexpansion("105.2.a.a", n_terms=6)
     assert form.label == "105.2.a.a.1.1"
     assert form.weight == 2
+    assert form.level == 105
     # Un-normalized, these should come out as clean integers: 1,1,1,-1,1,1.
     for coeff, expected in zip(form.coeffs, [1, 1, 1, -1, 1, 1]):
         assert abs(coeff - expected) < 1e-9

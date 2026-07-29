@@ -44,6 +44,7 @@ HECKE_CC_COLLECTION = "mf_hecke_cc"
 # different query hits a differently-shaped document.
 CC_LABEL_FIELD = "label"
 CC_WEIGHT_FIELD = "weight"
+CC_LEVEL_FIELD = "level"
 CC_AN_FIELD = "an_normalized"  # list of [re, im] pairs, index 0 = a_1, Hecke-normalized
 
 
@@ -186,4 +187,4 @@ def fetch_qexpansion(label, n_terms=400):
         re, im = _parse_an_entry(an_normalized[n - 1])
         coeffs.append(complex(re, im) * n ** ((weight - 1) / 2))
 
-    return QExpansion(coeffs, start=1, weight=weight, label=embedded_label)
+    return QExpansion(coeffs, start=1, weight=weight, level=doc.get(CC_LEVEL_FIELD), label=embedded_label)

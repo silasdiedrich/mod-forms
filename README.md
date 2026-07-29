@@ -61,6 +61,11 @@ A few extras worth knowing about:
   disk mask and any aspect-ratio padding.
 - **Night mode**: a dark UI theme, so the app's own chrome doesn't clash
   with a dark plot background.
+- **LaTeX description**: below every render, a centered LaTeX block states
+  exactly what was plotted — e.g. `Δ(z) = Σ τ(n) qⁿ, q = e^{2πiz}, k=12,
+  N=1` for Delta, or the LMFDB label for an imported form — followed by
+  the domain (disk or halfplane box) and a plain-text line of the style,
+  colormap, resolution, and background actually used for that render.
 
 If you change a control after already rendering, a warning banner tells
 you the preview is stale until you click Render again.

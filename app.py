@@ -84,7 +84,7 @@ def cached_lmfdb_search(level, weight, limit):
 @st.cache_data(show_spinner="Fetching q-expansion from the LMFDB...")
 def cached_lmfdb_qexpansion(label, n_terms):
     form = lmfdb.fetch_qexpansion(label, n_terms=n_terms)
-    return form.coeffs, form.start, form.label
+    return form.coeffs, form.start, form.weight, form.level, form.label
 
 
 def rgb_to_png_bytes(rgb):
@@ -94,6 +94,82 @@ def rgb_to_png_bytes(rgb):
     return buf.getvalue()
 
 
+_LATEX_SPECIAL = {
+    "\\": r"\textbackslash{}",
+    "_": r"\_",
+    "^": r"\^{}",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "&": r"\&",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+}
+
+
+def _latex_escape(s):
+    return "".join(_LATEX_SPECIAL.get(ch, ch) for ch in s)
+
+
+def build_form_latex(form, source_kind):
+    """LaTeX describing exactly what's being plotted: the truncated
+    q-expansion actually evaluated, plus weight/level when known -- the
+    same (k, N) notation the paper uses for a modular form of weight k on
+    a congruence subgroup of level N.
+    """
+    start = form.start
+    end = start + len(form.coeffs) - 1
+    if source_kind == "delta":
+        symbol, coeff_name = r"\Delta", r"\tau(n)"
+    elif source_kind == "eisenstein":
+        symbol, coeff_name = rf"E_{{{int(form.weight)}}}", "a_n"
+    elif source_kind == "lmfdb":
+        symbol = rf"f_{{\text{{{_latex_escape(form.label)}}}}}"
+        coeff_name = "a_n"
+    else:
+        symbol, coeff_name = "f", "a_n"
+
+    latex = rf"{symbol}(z) = \sum_{{n={start}}}^{{{end}}} {coeff_name}\, q^{{n}}, \quad q = e^{{2\pi i z}}"
+
+    meta = []
+    if source_kind != "eisenstein" and getattr(form, "weight", None) is not None:
+        meta.append(rf"k = {form.weight}")
+    if getattr(form, "level", None) is not None:
+        meta.append(rf"N = {form.level}")
+    if meta:
+        latex += r",\quad " + r",\ ".join(meta)
+    return latex
+
+
+def build_domain_latex(region, box, disk_extent):
+    if region == "disk":
+        return rf"z = \varphi(w), \quad w \in \mathbb{{D}},\ |w| < {disk_extent:.3g}"
+    (x0, x1), (y0, y1) = box
+    return rf"z = x + iy \in \mathbb{{H}}, \quad x \in [{x0:.3g}, {x1:.3g}],\ y \in [{y0:.3g}, {y1:.3g}]"
+
+
+def build_settings_caption(style, style_kwargs, cmap_fingerprint, content_shape, final_shape, bg_choice):
+    parts = [STYLE_LABELS.get(style, style)]
+    if "cmap" in style_kwargs:
+        if isinstance(cmap_fingerprint, tuple):
+            parts.append(f"custom colormap ({len(cmap_fingerprint[1])} colors)")
+        else:
+            parts.append(f"colormap: {cmap_fingerprint}")
+    if "alpha" in style_kwargs:
+        parts.append(f"α = {style_kwargs['alpha']:.2f}")
+    if "base" in style_kwargs:
+        parts.append(f"base = {style_kwargs['base']:.3g}")
+    if "offset" in style_kwargs:
+        parts.append(f"offset = {style_kwargs['offset']:.2f}")
+    dims = f"{content_shape[1]}×{content_shape[0]} px"
+    if final_shape != content_shape:
+        dims += f" → {final_shape[1]}×{final_shape[0]} px"
+    parts.append(dims)
+    parts.append(f"background: {bg_choice.lower()}")
+    return " · ".join(parts)
+
+
 st.title("🌀 Visualizing Modular Forms")
 st.caption(
     "Based on David Lowry-Duda, *Visualizing Modular Forms*, "
@@ -101,6 +177,7 @@ st.caption(
 )
 
 form = None
+source_kind = None
 
 with st.sidebar:
     dark_mode = st.toggle("🌙 Night mode", value=False, help="Dark UI chrome. Plot background is set separately below.")
@@ -124,6 +201,7 @@ with st.sidebar:
         n_terms = st.slider("Fourier coefficients (terms)", 20, 800, 400, 20)
         choice = st.selectbox("Form", list(BUILTIN_FORMS))
         form = cached_builtin_form(choice, n_terms)
+        source_kind = "delta" if choice.startswith("Delta") else "eisenstein"
 
     elif source == "LMFDB":
         n_terms = st.slider("Fourier coefficients (terms)", 20, 800, 400, 20)
@@ -167,15 +245,16 @@ with st.sidebar:
         )
         if st.button("Load form", type="secondary"):
             try:
-                coeffs, start, resolved_label = cached_lmfdb_qexpansion(label, n_terms)
-                st.session_state["lmfdb_form"] = (coeffs, start, resolved_label)
+                coeffs, start, weight, lvl, resolved_label = cached_lmfdb_qexpansion(label, n_terms)
+                st.session_state["lmfdb_form"] = (coeffs, start, weight, lvl, resolved_label)
                 st.success(f"Loaded {resolved_label} ({len(coeffs)} terms)")
             except (lmfdb.LMFDBError, ValueError) as e:
                 st.error(str(e))
 
         if "lmfdb_form" in st.session_state:
-            coeffs, start, resolved_label = st.session_state["lmfdb_form"]
-            form = QExpansion(coeffs, start=start, label=resolved_label)
+            coeffs, start, weight, lvl, resolved_label = st.session_state["lmfdb_form"]
+            form = QExpansion(coeffs, start=start, weight=weight, level=lvl, label=resolved_label)
+            source_kind = "lmfdb"
             st.caption(f"✓ Currently loaded: **{resolved_label}** — click **▶ Render** below to plot it.")
 
     else:  # Upload CSV
@@ -183,8 +262,18 @@ with st.sidebar:
             "CSV of Fourier coefficients (one per line, starting at q^start)", type="csv"
         )
         start = st.number_input("Exponent of q for first coefficient", value=1, step=1)
+        wc1, wc2 = st.columns(2)
+        csv_weight = wc1.number_input("Weight (optional)", min_value=0, value=0, step=1, help="0 = unspecified")
+        csv_level = wc2.number_input("Level (optional)", min_value=0, value=0, step=1, help="0 = unspecified")
         if upload is not None:
-            form = QExpansion.from_csv(upload, start=int(start), label=upload.name)
+            form = QExpansion.from_csv(
+                upload,
+                start=int(start),
+                weight=int(csv_weight) or None,
+                level=int(csv_level) or None,
+                label=upload.name,
+            )
+            source_kind = "csv"
 
     st.header("2. Region")
     region = st.radio(
@@ -325,17 +414,25 @@ if render_clicked:
             if target_ratio is not None:
                 rgb = plotting.pad_to_aspect(rgb, target_ratio, background=plot_background)
             st.session_state["last_png"] = rgb_to_png_bytes(rgb)
-            label = getattr(form, "label", None) or "custom form"
-            out_rows, out_cols = rgb.shape[:2]
-            st.session_state["last_caption"] = (
-                f"{label} — {STYLE_LABELS.get(style, style)} ({out_cols}×{out_rows})"
+            out_shape = rgb.shape[:2]
+            st.session_state["last_form_latex"] = build_form_latex(form, source_kind)
+            st.session_state["last_domain_latex"] = build_domain_latex(region, box, disk_extent)
+            st.session_state["last_settings_caption"] = build_settings_caption(
+                style, style_kwargs, cmap_fingerprint, content_shape, out_shape, bg_choice
             )
             st.session_state["last_render_fingerprint"] = current_fingerprint
 
 if "last_png" in st.session_state:
     if st.session_state.get("last_render_fingerprint") != current_fingerprint:
         st.warning("Settings changed since this render — click **▶ Render** to update the preview.")
-    st.image(st.session_state["last_png"], caption=st.session_state["last_caption"])
+    st.image(st.session_state["last_png"])
+    st.latex(st.session_state["last_form_latex"])
+    st.latex(st.session_state["last_domain_latex"])
+    st.markdown(
+        f'<div style="text-align:center; opacity:0.75; font-size:0.85rem; margin-top:-0.6rem;">'
+        f'{st.session_state["last_settings_caption"]}</div>',
+        unsafe_allow_html=True,
+    )
     st.download_button("Download PNG", st.session_state["last_png"], file_name="modform.png", mime="image/png")
 else:
     st.info("Configure a form in the sidebar and click **Render**.")
