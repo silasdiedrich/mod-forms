@@ -92,6 +92,12 @@ def build_parser():
         help="Override the content resolution (defaults to what's stored in the metadata).",
     )
 
+    inspect_p = sub.add_parser(
+        "inspect",
+        help="Print a PNG's embedded settings in a human-readable form, e.g. to re-enter them in the UI by hand.",
+    )
+    inspect_p.add_argument("input", help="A PNG previously written by `plot` or the UI.")
+
     video_p = sub.add_parser(
         "video", help="Render an ambient zoom video from a Python timeline script (requires ffmpeg)."
     )
@@ -220,6 +226,88 @@ def _run_replot(args):
     print(f"wrote {args.out}")
 
 
+def _run_inspect(args):
+    """Print a PNG's embedded settings in a form that maps directly onto
+    the UI's sidebar sections, for re-entering them by hand (e.g. to keep
+    tweaking a shot interactively rather than using `replot`).
+    """
+    meta = reproduce.load_metadata(args.input)
+    f = meta["form"]
+
+    print("=== 1. Form ===")
+    source = f["source"]
+    if source == "delta":
+        print("  Source: Built-in")
+        print("  Form: Delta — weight 12, level 1")
+    elif source == "eisenstein":
+        k = int(f["weight"])
+        print("  Source: Built-in")
+        print(f"  Form: E{k} — Eisenstein, weight {k}")
+    elif source == "lmfdb":
+        print("  Source: LMFDB")
+        print(f"  LMFDB label: {f['label']}")
+    else:
+        print("  Source: Upload CSV")
+        print("  (the original CSV file is needed to re-upload through the UI --")
+        print("   the coefficients are embedded here but not re-uploadable as a file;")
+        print(f"   use `modforms.cli replot {args.input} --out new.png` instead)")
+    print(f"  Terms: {len(f['coeffs'])}")
+    if f.get("weight") is not None and source != "eisenstein":
+        print(f"  (weight: {f['weight']})")
+    if f.get("level") is not None:
+        print(f"  (level: {f['level']})")
+
+    print()
+    print("=== 2. Region ===")
+    if meta["region"] == "disk":
+        print("  Region: Poincaré disk")
+        print(f"  Disk plot extent: {meta.get('disk_extent', 1.02)}")
+    else:
+        print("  Region: Upper halfplane")
+        print("  Preset box: Custom")
+        (x0, x1), (y0, y1) = meta["box"]
+        print(f"  x0={x0}  x1={x1}  y0={y0}  y1={y1}")
+
+    print()
+    print("=== 3. Style ===")
+    print(f"  Visualization style: {meta['style']}")
+    for key, value in meta.get("style_kwargs", {}).items():
+        if key == "cmap":
+            if isinstance(value, dict) and value.get("type") == "custom":
+                print(f"  Colormap: Custom -- colors={value['colors']}  cyclic={value['cyclic']}")
+            elif isinstance(value, dict):
+                print(f"  Colormap: Built-in -- {value['name']}")
+            else:
+                print(f"  Colormap: Built-in -- {value}")
+        elif key == "alpha":
+            print(f"  Alpha: {value}")
+        elif key == "base":
+            print(f"  Base: {value}")
+        elif key == "offset":
+            print(f"  Hue offset: {value}")
+
+    print()
+    print("=== 4. Resolution & Aspect Ratio ===")
+    rows, cols = meta["content_shape"]
+    print(f"  Detail (long edge): {max(rows, cols)}")
+    target_ratio = meta.get("target_ratio")
+    if target_ratio:
+        print(f"  Output aspect ratio: Custom -- Width/Height = {target_ratio:.4g} (e.g. Width={target_ratio:.4g}, Height=1)")
+    else:
+        print("  Output aspect ratio: Native (undistorted)")
+
+    print()
+    print("=== 5. Background ===")
+    bg = tuple(meta["background"])
+    hexcode = "#{:02x}{:02x}{:02x}".format(*(round(c * 255) for c in bg))
+    if bg == (1.0, 1.0, 1.0):
+        print("  Outside the disk (or masked region): White")
+    elif bg == (0.0, 0.0, 0.0):
+        print("  Outside the disk (or masked region): Black")
+    else:
+        print(f"  Outside the disk (or masked region): Custom -- {hexcode}")
+
+
 def _load_timeline(path):
     spec = importlib.util.spec_from_file_location("modforms_timeline", path)
     module = importlib.util.module_from_spec(spec)
@@ -289,6 +377,8 @@ def main(argv=None):
         _run_search(args)
     elif args.command == "replot":
         _run_replot(args)
+    elif args.command == "inspect":
+        _run_inspect(args)
     elif args.command == "video":
         _run_video(args)
 

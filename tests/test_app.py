@@ -367,7 +367,10 @@ def test_video_json_import_rejects_garbage():
     import_area.set_value("not valid json").run(timeout=30)
     [b for b in at.main.button if b.label == "Load from JSON"][0].click().run(timeout=30)
     assert not at.exception
-    assert len(at.main.error) == 1
+    # Filtered rather than an exact count: an unrelated "ffmpeg not found" error
+    # can also be showing on this page depending on the test environment, and
+    # isn't what this test is about.
+    assert any("Couldn't load that as a timeline" in e.value for e in at.main.error)
 
 
 def test_video_30min_preset_loads_with_correct_duration_and_no_safety_warnings():

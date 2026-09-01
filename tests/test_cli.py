@@ -82,6 +82,81 @@ def test_replot_on_non_modforms_png_raises_clear_error(tmp_path):
         assert "modforms_reproduce" in str(e)
 
 
+def test_inspect_prints_gui_mapped_sections_for_builtin_delta(tmp_path, capsys):
+    out = tmp_path / "delta.png"
+    main(
+        [
+            "plot", "--form", "delta", "--region", "disk", "--style", "colormap-phase-contour",
+            "--cmap", "cividis", "--base", "2.0", "--shape", "40", "40", "--out", str(out),
+        ]
+    )
+    capsys.readouterr()  # discard the "wrote ..." line
+
+    main(["inspect", str(out)])
+    output = capsys.readouterr().out
+
+    assert "=== 1. Form ===" in output
+    assert "Source: Built-in" in output
+    assert "Form: Delta — weight 12, level 1" in output
+    assert "=== 2. Region ===" in output
+    assert "Region: Poincaré disk" in output
+    assert "=== 3. Style ===" in output
+    assert "Colormap: Built-in -- cividis" in output
+    assert "Base: 2.0" in output
+    assert "=== 4. Resolution & Aspect Ratio ===" in output
+    assert "Detail (long edge): 40" in output
+    assert "=== 5. Background ===" in output
+    assert "White" in output
+
+
+def test_inspect_shows_eisenstein_weight_and_halfplane_box(tmp_path, capsys):
+    out = tmp_path / "e6.png"
+    main(
+        [
+            "plot", "--form", "e6", "--region", "halfplane", "--box=-2,2,0,3",
+            "--style", "colormap-phase", "--cmap", "twilight", "--shape", "30", "20", "--out", str(out),
+        ]
+    )
+    capsys.readouterr()
+
+    main(["inspect", str(out)])
+    output = capsys.readouterr().out
+    assert "Form: E6 — Eisenstein, weight 6" in output
+    assert "Region: Upper halfplane" in output
+    assert "x0=-2.0  x1=2.0  y0=0.0  y1=3.0" in output
+
+
+def test_inspect_shows_custom_colormap_and_black_background(tmp_path, capsys):
+    from modforms import forms, plotting, reproduce
+    from modforms.coloring import custom_colormap
+
+    form = forms.delta(20)
+    cmap = custom_colormap(["#000000", "#ff0088"], cyclic=True)
+    vals = plotting.evaluate_on_region(form, region="disk", shape=(20, 20))
+    rgb = plotting.render(vals, style="colormap-phase-contour", background=(0.0, 0.0, 0.0), base=2.0, cmap=cmap)
+    meta = reproduce.build_metadata(
+        form, "delta", region="disk", box=None, disk_extent=1.02, style="colormap-phase-contour",
+        style_kwargs_json=reproduce.style_kwargs_to_json(
+            {"cmap": cmap, "base": 2.0}, ("custom", ("#000000", "#ff0088"), True)
+        ),
+        content_shape=(20, 20), output_shape=(20, 20), target_ratio=None, background=(0.0, 0.0, 0.0),
+    )
+    out = tmp_path / "custom.png"
+    plotting.save_png(rgb, str(out), metadata=meta)
+
+    main(["inspect", str(out)])
+    output = capsys.readouterr().out
+    assert "Colormap: Custom -- colors=['#000000', '#ff0088']  cyclic=True" in output
+    assert "Outside the disk (or masked region): Black" in output
+
+
+def test_inspect_on_non_modforms_png_raises_clear_error(tmp_path):
+    plain = tmp_path / "plain.png"
+    Image.fromarray(np.zeros((5, 5, 3), dtype=np.uint8)).save(plain)
+    with pytest.raises(ValueError, match="modforms_reproduce"):
+        main(["inspect", str(plain)])
+
+
 def _write_tiny_timeline(path):
     path.write_text(
         textwrap.dedent(

@@ -81,7 +81,11 @@ A few extras worth knowing about:
 
   (add `--shape ROWS COLS` to reproduce it at a different resolution).
   The filename is also descriptive (e.g. `Delta_disk_phase-contour.png`)
-  rather than a generic `modform.png`.
+  rather than a generic `modform.png`. Prefer to keep tweaking a shot
+  interactively in the UI instead of using `replot`? `modforms.cli
+  inspect downloaded.png` prints the same settings in a human-readable
+  form mapped onto the UI's own sidebar sections (1. Form, 2. Region, ...)
+  so you know exactly what to re-enter by hand.
 
 If you change a control after already rendering, a warning banner tells
 you the preview is stale until you click Render again.
@@ -91,6 +95,7 @@ you the preview is stale until you click Render again.
 ```bash
 python -m modforms.cli plot --form delta --region disk --style phase-contour --cmap cividis --out delta.png
 python -m modforms.cli replot delta.png --out delta_again.png   # reproduce it exactly from its own metadata
+python -m modforms.cli inspect delta.png                        # print its settings, e.g. to re-enter them in the UI by hand
 ```
 
 ```python
